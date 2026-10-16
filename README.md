@@ -1,6 +1,6 @@
 # Agents Squad Team 🧑‍💻🤖
 
-Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **11 agent chuyên biệt** (1 trưởng nhóm điều phối + 10 chuyên gia) và **7 lệnh workflow** giúp bạn đi trọn vòng đời phát triển phần mềm: phân tích yêu cầu → thiết kế → chia task → code → test → review → bảo mật → tài liệu → release.
+Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **12 agent chuyên biệt** (1 trưởng nhóm điều phối + 11 chuyên gia) và **8 lệnh workflow** giúp bạn đi trọn vòng đời phát triển phần mềm: phân tích yêu cầu → thiết kế → chia task → code → test → review → bảo mật → performance → tài liệu → release.
 
 ## Đội hình
 
@@ -16,6 +16,7 @@ Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **11 agent chuy�
 | 🩷 `debugger` | Chuyên gia debug | Lỗi, stack trace, test fail, flaky, "chạy local được mà CI thì không" | Đọc/ghi code + chạy lệnh |
 | 🩵 `devops-engineer` | DevOps | CI/CD, Docker, K8s, Terraform, checklist trước deploy | Đọc/ghi config + chạy lệnh |
 | 🔴 `security-auditor` | Bảo mật | Audit OWASP/CWE, secrets, authz, dependency có lỗ hổng | **Chỉ đọc** |
+| 🟡 `performance-engineer` | Chuyên gia performance | Query chậm, N+1, thiếu index, lock, connection pool; Kafka/RabbitMQ lag, ack/nack/commit sai, redelivery loop, rebalance; profiling CPU/memory | Đọc/ghi code + chạy lệnh (đo trước/sau) |
 | 🔵 `tech-writer` | Technical writer | README, API docs, CHANGELOG, runbook, hướng dẫn | Đọc/ghi tài liệu |
 
 Mỗi agent đều:
@@ -35,6 +36,7 @@ Mỗi agent đều:
 | `/dev-squad:sprint-plan <mục tiêu>` | BA → (Architect) → PM, tạo board `.squad/TASKS.md` |
 | `/dev-squad:standup [khoảng thời gian]` | PM tổng hợp từ git log + task board |
 | `/dev-squad:ship [version]` | DevOps ∥ Security ∥ QA → Tech writer → kết luận GO / NO-GO |
+| `/dev-squad:perf <vấn đề>` | Performance engineer đo baseline & tìm bottleneck → Developer fix → QA ∥ đo lại trước/sau → Reviewer |
 
 Ngoài ra skill `squad-playbook` giúp Claude tự biết nên gọi agent nào khi bạn nói kiểu *"dùng squad làm…"*.
 
@@ -82,6 +84,8 @@ claude --plugin-dir ./agents-squad-team/plugins/dev-squad
 /dev-squad:bugfix  TypeError: Cannot read properties of undefined (reading 'id') ở OrderService.create
 /dev-squad:review  origin/main...HEAD
 /dev-squad:sprint-plan Xây module quản lý kho, capacity 30 points
+/dev-squad:perf    Consumer topic order-events lag tăng liên tục, có log nack lặp lại cùng offset
+/dev-squad:perf    API GET /orders p95 = 2s, target 300ms
 ```
 
 **Gọi đích danh một agent:**
@@ -109,14 +113,14 @@ Các agent trao đổi qua file để agent sau có đủ ngữ cảnh:
 ├── design/<feature>.md              # architect
 ├── adr/0001-<quyet-dinh>.md         # architect
 ├── TASKS.md                         # project-manager (nguồn sự thật về task)
-└── reports/<ngày>-<loại>-<slug>.md  # qa / review / security / debug
+└── reports/<ngày>-<loại>-<slug>.md  # qa / review / security / debug / perf
 ```
 
 Bạn có thể commit `.squad/` để lưu lịch sử planning cho cả team, hoặc thêm vào `.gitignore` nếu chỉ muốn dùng cá nhân.
 
 ## Tuỳ biến
 
-- **Model**: mỗi agent khai báo `model` trong frontmatter (`architect`, `security-auditor` dùng `opus`; `orchestrator` dùng `inherit`; còn lại `sonnet`). Đổi thành `opus`, `sonnet`, `haiku` hoặc `inherit` tuỳ ngân sách.
+- **Model**: mỗi agent khai báo `model` trong frontmatter (`architect`, `security-auditor`, `performance-engineer` dùng `opus`; `orchestrator` dùng `inherit`; còn lại `sonnet`). Đổi thành `opus`, `sonnet`, `haiku` hoặc `inherit` tuỳ ngân sách.
 - **Quyền công cụ**: sửa trường `tools`. `code-reviewer` và `security-auditor` cố ý không có `Write`/`Edit` để đảm bảo chỉ đọc.
 - **Thêm agent**: tạo file `plugins/dev-squad/agents/<ten>.md` theo mẫu có sẵn, thêm vào bảng trong `orchestrator.md` và `skills/squad-playbook/SKILL.md`.
 - **Ghi đè cho 1 dự án**: copy file agent vào `.claude/agents/` của dự án rồi sửa — agent cấp project được ưu tiên hơn agent của plugin.
@@ -129,8 +133,8 @@ agents-squad-team/
 ├── .github/workflows/validate.yml      # CI: claude plugin validate --strict
 └── plugins/dev-squad/
     ├── .claude-plugin/plugin.json      # manifest plugin
-    ├── agents/                         # 11 agent
-    ├── commands/                       # 7 lệnh workflow
+    ├── agents/                         # 12 agent
+    ├── commands/                       # 8 lệnh workflow
     └── skills/squad-playbook/SKILL.md  # playbook điều phối
 ```
 

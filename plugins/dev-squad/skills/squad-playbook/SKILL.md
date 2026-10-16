@@ -19,6 +19,7 @@ description: Playbook for working with the dev-squad agent team — which specia
 | `dev-squad:debugger` | Reproduce, root-cause, minimal fix + regression test | Yes |
 | `dev-squad:devops-engineer` | CI/CD, Docker, IaC, release readiness | Yes (infra/config) |
 | `dev-squad:security-auditor` | Read-only security audit | No (read-only) |
+| `dev-squad:performance-engineer` | Profiling, DB query/index tuning, Kafka/RabbitMQ lag & ack/nack issues | Yes (targeted fixes, benchmarks) |
 | `dev-squad:tech-writer` | README, API docs, changelog, runbooks | Docs only |
 
 Subagents cannot launch other subagents. Orchestration (the pipelines below) therefore runs from the main session — via the `/dev-squad:*` commands or by following this playbook — or with the orchestrator as the main agent (`claude --agent dev-squad:orchestrator`).
@@ -28,6 +29,7 @@ Subagents cannot launch other subagents. Orchestration (the pipelines below) the
 - **Feature** (`/dev-squad:feature`): BA → architect → PM → developer → QA ⟲ developer → code-reviewer ∥ security-auditor → tech-writer → PM close.
 - **Bugfix** (`/dev-squad:bugfix`): debugger → (developer) → QA → code-reviewer.
 - **Review** (`/dev-squad:review`): code-reviewer ∥ security-auditor.
+- **Performance** (`/dev-squad:perf`): performance-engineer → (developer) → QA ∥ performance-engineer re-measure → code-reviewer.
 - **Sprint planning** (`/dev-squad:sprint-plan`): BA → (architect) → PM.
 - **Standup** (`/dev-squad:standup`): PM.
 - **Release** (`/dev-squad:ship`): devops ∥ security ∥ QA → tech-writer → GO/NO-GO.
@@ -53,7 +55,7 @@ Agents start with no memory of the conversation. Every brief should contain:
 ├── design/<slug>.md            # architect
 ├── adr/NNNN-<decision>.md      # architect
 ├── TASKS.md                    # project-manager (single source of truth)
-└── reports/<date>-<type>-<slug>.md   # qa, review, security, debug
+└── reports/<date>-<type>-<slug>.md   # qa, review, security, debug, perf
 ```
 
 Teams may commit `.squad/` (shared planning history) or add it to `.gitignore` (personal scratch space).

@@ -5,16 +5,16 @@
   },
   "metadata": {
     "description": "A squad of specialized Claude Code agents for software developers: orchestration, BA, task management, architecture, coding, testing, review, debugging, DevOps, security, performance and docs.",
-    "version": "1.1.0"
+    "version": "1.2.0"
   },
   "plugins": [
     {
       "name": "dev-squad",
       "source": "./plugins/dev-squad",
-      "description": "12 specialized developer agents (1 orchestrator + 11 specialists) plus slash commands that run full feature, bugfix, review, performance, sprint and release workflows.",
-      "version": "1.1.0",
+      "description": "12 specialized developer agents (1 orchestrator + 11 specialists) plus slash commands that run full feature, bugfix, review, performance, sprint and release workflows, plus load-simulation tools for reproducing sudden DB/HTTP/Kafka spikes.",
+      "version": "1.2.0",
       "category": "development",
-      "keywords": ["agents", "subagents", "team", "orchestration", "testing", "code-review", "business-analysis", "project-management", "devops", "security", "performance", "kafka", "database"]
+      "keywords": ["agents", "subagents", "team", "orchestration", "testing", "code-review", "business-analysis", "project-management", "devops", "security", "performance", "kafka", "database", "load-testing", "spike-testing"]
     }
   ]
 }

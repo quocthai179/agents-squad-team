@@ -19,7 +19,7 @@ description: Playbook for working with the dev-squad agent team — which specia
 | `dev-squad:debugger` | Reproduce, root-cause, minimal fix + regression test | Yes |
 | `dev-squad:devops-engineer` | CI/CD, Docker, IaC, release readiness | Yes (infra/config) |
 | `dev-squad:security-auditor` | Read-only security audit | No (read-only) |
-| `dev-squad:performance-engineer` | Profiling, DB query/index tuning, Kafka/RabbitMQ lag & ack/nack issues | Yes (targeted fixes, benchmarks) |
+| `dev-squad:performance-engineer` | Profiling, DB query/index tuning, Kafka/RabbitMQ lag & ack/nack issues, load/spike simulation tools (`load-simulation` skill) | Yes (targeted fixes, benchmarks, sim tools) |
 | `dev-squad:tech-writer` | README, API docs, changelog, runbooks | Docs only |
 
 Subagents cannot launch other subagents. Orchestration (the pipelines below) therefore runs from the main session — via the `/dev-squad:*` commands or by following this playbook — or with the orchestrator as the main agent (`claude --agent dev-squad:orchestrator`).
@@ -55,6 +55,7 @@ Agents start with no memory of the conversation. Every brief should contain:
 ├── design/<slug>.md            # architect
 ├── adr/NNNN-<decision>.md      # architect
 ├── TASKS.md                    # project-manager (single source of truth)
+├── perf/<scenario>/            # performance-engineer: runnable load-simulation tools
 └── reports/<date>-<type>-<slug>.md   # qa, review, security, debug, perf
 ```
 

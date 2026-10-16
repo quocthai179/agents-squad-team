@@ -1,6 +1,6 @@
 {
   "name": "dev-squad",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A developer squad of 12 specialized agents (orchestrator, business analyst, project manager, architect, developer, QA, code reviewer, debugger, DevOps, security auditor, performance engineer, tech writer) with workflow commands.",
   "author": {
     "name": "quocthai179"
@@ -8,5 +8,5 @@
   "homepage": "https://github.com/quocthai179/agents-squad-team",
   "repository": "https://github.com/quocthai179/agents-squad-team",
   "license": "MIT",
-  "keywords": ["agents", "team", "orchestration", "developer", "qa", "code-review", "ba", "pm", "devops", "security", "performance"]
+  "keywords": ["agents", "team", "orchestration", "developer", "qa", "code-review", "ba", "pm", "devops", "security", "performance", "load-testing"]
 }

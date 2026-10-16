@@ -16,7 +16,7 @@ Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **12 agent chuy�
 | 🩷 `debugger` | Chuyên gia debug | Lỗi, stack trace, test fail, flaky, "chạy local được mà CI thì không" | Đọc/ghi code + chạy lệnh |
 | 🩵 `devops-engineer` | DevOps | CI/CD, Docker, K8s, Terraform, checklist trước deploy | Đọc/ghi config + chạy lệnh |
 | 🔴 `security-auditor` | Bảo mật | Audit OWASP/CWE, secrets, authz, dependency có lỗ hổng | **Chỉ đọc** |
-| 🟡 `performance-engineer` | Chuyên gia performance | Query chậm, N+1, thiếu index, lock, connection pool; Kafka/RabbitMQ lag, ack/nack/commit sai, redelivery loop, rebalance; profiling CPU/memory | Đọc/ghi code + chạy lệnh (đo trước/sau) |
+| 🟡 `performance-engineer` | Chuyên gia performance | Query chậm, N+1, thiếu index, lock, connection pool; Kafka/RabbitMQ lag, ack/nack/commit sai, redelivery loop, rebalance; profiling CPU/memory; **tự tạo tool giả lập tải đột biến** (skill `load-simulation`) | Đọc/ghi code + chạy lệnh (đo trước/sau) |
 | 🔵 `tech-writer` | Technical writer | README, API docs, CHANGELOG, runbook, hướng dẫn | Đọc/ghi tài liệu |
 
 Mỗi agent đều:
@@ -39,6 +39,47 @@ Mỗi agent đều:
 | `/dev-squad:perf <vấn đề>` | Performance engineer đo baseline & tìm bottleneck → Developer fix → QA ∥ đo lại trước/sau → Reviewer |
 
 Ngoài ra skill `squad-playbook` giúp Claude tự biết nên gọi agent nào khi bạn nói kiểu *"dùng squad làm…"*.
+
+## Skill `load-simulation` — giả lập tải đột biến
+
+Phần lớn sự cố performance không xảy ra lúc tải bình thường, mà xảy ra khi traffic **tăng đột ngột**: chạy campaign, cron job trùng giờ cao điểm, retry storm, consumer khởi động lại với backlog lớn, cache bị flush sau deploy… Skill này được nạp sẵn cho `performance-engineer` (bạn cũng có thể gọi trực tiếp bằng `/dev-squad:load-simulation`). Nó giúp agent **tự dựng tool tái hiện sự cố** ngay trong dự án của bạn, tại `.squad/perf/<kịch-bản>/`, rồi đo lại trước/sau khi sửa.
+
+| Tool | Giả lập | Cần cài |
+|---|---|---|
+| `db_burst.py` | Dồn query đột biến vào PostgreSQL/MySQL/SQLite: cạn connection pool, query chậm khi chạy đồng thời, lock trên hot row, transaction dài, connection storm; theo dõi `pg_stat_activity` theo từng giây | `psycopg[binary]` / `pymysql` |
+| `http_burst.py` | Traffic HTTP tăng vọt, trộn nhiều endpoint theo trọng số, cache stampede, keep-alive hoặc connection storm | chỉ thư viện chuẩn |
+| `kafka_burst.py` | `produce` burst (acks, batching, nén, sync và async, key lệch → hot partition, poison message); `consume` giả lập consumer chậm, nack/seek retry vô hạn, DLQ, các kiểu commit, vượt `max.poll.interval.ms`; `lag` theo dõi lag | `confluent-kafka` |
+| `spike_http.js` | Template k6 cho spike HTTP hàng nghìn req/s | `k6` |
+| `loadkit.py` | Engine dùng chung để tự viết tool mới (gRPC, Redis, MongoDB, RabbitMQ…) | chỉ thư viện chuẩn |
+
+Đặc điểm chính:
+- **Mô hình open-model**: request đến theo lịch như traffic thật. Latency được đo từ thời điểm *dự kiến gửi*, nên thời gian chờ pool/worker cũng được tính, tránh lỗi coordinated omission.
+- **Hình dạng tải**: `spike`, `burst`, `ramp`, `step`, `constant`, hoặc tự định nghĩa qua `--profile "30s:10,1s:10->800,60s:800,30s:10"`.
+- **Phân bố key lệch** `{{zipf:N:S}}` để mô phỏng hot key / hot row.
+- **Báo cáo theo từng giai đoạn** baseline / spike / recovery (p50/p95/p99, service time, drop), kèm gợi ý chẩn đoán và file JSON.
+- **An toàn mặc định**: từ chối host không phải local; DB chỉ đọc trừ khi có `--allow-write`; không lưu token vào báo cáo.
+- Có catalog **18 kịch bản** sự cố hay gặp kèm lệnh tái hiện và cách sửa (`references/scenarios.md`).
+
+Ví dụ:
+
+```bash
+# Query không có index: baseline 5 q/s, sau đó tăng vọt lên 600 q/s
+python db_burst.py --dsn postgresql://app:app@localhost/app --pool 10 --observe \
+  --query "SELECT * FROM orders WHERE customer_id = {{randint:1:50000}}" --shape spike --base 5 --peak 600
+
+# Poison message + nack/seek retry → partition bị kẹt; so sánh với retry giới hạn + DLQ
+python kafka_burst.py produce --topic perf-payments --profile "4s:2500" --poison-every 3000
+python kafka_burst.py consume --topic perf-payments --group sim --on-error retry-seek --duration 30s
+python kafka_burst.py consume --topic perf-payments --group sim2 --on-error dlq --max-retries 3
+```
+
+Kết quả kiểm thử thật trên PostgreSQL 16 (bảng 600k dòng, pool 10, spike 600 q/s):
+
+| Giai đoạn | Trước khi thêm index (p95) | Sau khi thêm index (p95) |
+|---|---|---|
+| baseline 5 q/s | 23 ms | 4.1 ms |
+| spike 600 q/s | 15 710 ms, 835 request bị drop | 1.2 ms, 0 drop |
+| recovery 5 q/s | 15 317 ms (chưa hồi phục) | 5.2 ms |
 
 ## Cài đặt
 
@@ -86,6 +127,7 @@ claude --plugin-dir ./agents-squad-team/plugins/dev-squad
 /dev-squad:sprint-plan Xây module quản lý kho, capacity 30 points
 /dev-squad:perf    Consumer topic order-events lag tăng liên tục, có log nack lặp lại cùng offset
 /dev-squad:perf    API GET /orders p95 = 2s, target 300ms
+/dev-squad:perf    Hệ thống chậm hẳn mỗi khi chạy flash sale, cần dựng tool giả lập spike để tái hiện
 ```
 
 **Gọi đích danh một agent:**
@@ -113,6 +155,7 @@ Các agent trao đổi qua file để agent sau có đủ ngữ cảnh:
 ├── design/<feature>.md              # architect
 ├── adr/0001-<quyet-dinh>.md         # architect
 ├── TASKS.md                         # project-manager (nguồn sự thật về task)
+├── perf/<kịch-bản>/                 # performance-engineer: tool giả lập tải chạy lại được
 └── reports/<ngày>-<loại>-<slug>.md  # qa / review / security / debug / perf
 ```
 
@@ -130,12 +173,18 @@ Bạn có thể commit `.squad/` để lưu lịch sử planning cho cả team, 
 ```
 agents-squad-team/
 ├── .claude-plugin/marketplace.json     # khai báo marketplace
-├── .github/workflows/validate.yml      # CI: claude plugin validate --strict
+├── .github/workflows/validate.yml      # CI: validate plugin + unit test
+├── tests/test_load_simulation.py       # unit test cho engine giả lập tải
 └── plugins/dev-squad/
     ├── .claude-plugin/plugin.json      # manifest plugin
     ├── agents/                         # 12 agent
     ├── commands/                       # 8 lệnh workflow
-    └── skills/squad-playbook/SKILL.md  # playbook điều phối
+    └── skills/
+        ├── squad-playbook/SKILL.md     # playbook điều phối
+        └── load-simulation/            # skill giả lập tải đột biến
+            ├── SKILL.md
+            ├── references/scenarios.md # 18 kịch bản sự cố + cách tái hiện
+            └── scripts/                # loadkit, db_burst, http_burst, kafka_burst, spike_http.js
 ```
 
 ## Kiểm tra
@@ -144,6 +193,7 @@ agents-squad-team/
 claude plugin validate --strict .
 claude plugin validate --strict plugins/dev-squad
 claude --plugin-dir plugins/dev-squad plugin details dev-squad
+python3 -m unittest discover -s tests
 ```
 
 ## License

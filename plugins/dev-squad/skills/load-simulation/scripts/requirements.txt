@@ -1,0 +1,4 @@
+# Optional drivers — install only what your scenario needs.
+psycopg[binary]>=3.1      # PostgreSQL (db_burst.py); psycopg2-binary also works
+pymysql>=1.1              # MySQL / MariaDB (db_burst.py)
+confluent-kafka>=2.3      # Kafka (kafka_burst.py)

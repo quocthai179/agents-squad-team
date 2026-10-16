@@ -26,3 +26,18 @@ jobs:
           claude plugin validate --strict plugins/dev-squad/agents
           claude plugin validate --strict plugins/dev-squad/commands
           claude plugin validate --strict plugins/dev-squad/skills
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Load-simulation engine tests
+        run: python -m unittest discover -s tests -v
+      - name: Tools parse their CLI
+        run: |
+          cd plugins/dev-squad/skills/load-simulation/scripts
+          python db_burst.py --help > /dev/null
+          python http_burst.py --help > /dev/null

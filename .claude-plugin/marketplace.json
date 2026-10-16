@@ -4,17 +4,17 @@
     "name": "quocthai179"
   },
   "metadata": {
-    "description": "A squad of specialized Claude Code agents for software developers: orchestration, BA, task management, architecture, coding, testing, review, debugging, DevOps, security and docs.",
-    "version": "1.0.0"
+    "description": "A squad of specialized Claude Code agents for software developers: orchestration, BA, task management, architecture, coding, testing, review, debugging, DevOps, security, performance and docs.",
+    "version": "1.1.0"
   },
   "plugins": [
     {
       "name": "dev-squad",
       "source": "./plugins/dev-squad",
-      "description": "11 specialized developer agents (1 orchestrator + 10 specialists) plus slash commands that run full feature, bugfix, review, sprint and release workflows.",
-      "version": "1.0.0",
+      "description": "12 specialized developer agents (1 orchestrator + 11 specialists) plus slash commands that run full feature, bugfix, review, performance, sprint and release workflows.",
+      "version": "1.1.0",
       "category": "development",
-      "keywords": ["agents", "subagents", "team", "orchestration", "testing", "code-review", "business-analysis", "project-management", "devops", "security"]
+      "keywords": ["agents", "subagents", "team", "orchestration", "testing", "code-review", "business-analysis", "project-management", "devops", "security", "performance", "kafka", "database"]
     }
   ]
 }

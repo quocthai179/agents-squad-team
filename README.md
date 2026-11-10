@@ -1,6 +1,6 @@
 # Agents Squad Team 🧑‍💻🤖
 
-Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **12 agent chuyên biệt** (1 trưởng nhóm điều phối + 11 chuyên gia) và **8 lệnh workflow** giúp bạn đi trọn vòng đời phát triển phần mềm: phân tích yêu cầu → thiết kế → chia task → code → test → review → bảo mật → performance → tài liệu → release.
+Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **15 agent chuyên biệt** (1 trưởng nhóm điều phối + 14 chuyên gia) và **11 lệnh workflow** giúp bạn đi trọn vòng đời phát triển phần mềm: phân tích yêu cầu → thiết kế → chia task → code → test → review → bảo mật → performance → migration DB → release → xử lý sự cố → nâng cấp dependency.
 
 ## Đội hình
 
@@ -17,6 +17,9 @@ Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **12 agent chuy�
 | 🩵 `devops-engineer` | DevOps | CI/CD, Docker, K8s, Terraform, checklist trước deploy | Đọc/ghi config + chạy lệnh |
 | 🔴 `security-auditor` | Bảo mật | Audit OWASP/CWE, secrets, authz, dependency có lỗ hổng | **Chỉ đọc** |
 | 🟡 `performance-engineer` | Chuyên gia performance | Query chậm, N+1, thiếu index, lock, connection pool; Kafka/RabbitMQ lag, ack/nack/commit sai, redelivery loop, rebalance; profiling CPU/memory; **tự tạo tool giả lập tải đột biến** (skill `load-simulation`) | Đọc/ghi code + chạy lệnh (đo trước/sau) |
+| 🟢 `database-engineer` | Kỹ sư database | Thay đổi schema/dữ liệu không downtime (expand → migrate → contract), đánh giá lock trên bảng lớn, backfill theo batch, rollback, review migration (Flyway, Liquibase, Alembic, Prisma…) | Đọc/ghi migration + chạy lệnh (chỉ DB local) |
+| 🔴 `sre-incident-responder` | SRE / xử lý sự cố | Production sập hoặc chậm: đánh giá mức độ, tìm thay đổi gây lỗi, đề xuất cách giảm thiểu, timeline, status update, postmortem; SLO, alert, runbook | Production chỉ đọc; mọi thay đổi phải được bạn duyệt |
+| 🟠 `dependency-upgrader` | Nâng cấp dependency | Spring Boot 2→3, Java 17→21, Node, Python, React…; vá CVE; đọc migration guide, OpenRewrite/codemod, nâng từng bước có test | Đọc/ghi code + chạy lệnh |
 | 🔵 `tech-writer` | Technical writer | README, API docs, CHANGELOG, runbook, hướng dẫn | Đọc/ghi tài liệu |
 
 Mỗi agent đều:
@@ -35,14 +38,17 @@ Mỗi agent đều:
 | `/dev-squad:review [target]` | Code reviewer ∥ Security auditor chạy song song, gộp báo cáo |
 | `/dev-squad:sprint-plan <mục tiêu>` | BA → (Architect) → PM, tạo board `.squad/TASKS.md` |
 | `/dev-squad:standup [khoảng thời gian]` | PM tổng hợp từ git log + task board |
-| `/dev-squad:ship [version]` | DevOps ∥ Security ∥ QA → Tech writer → kết luận GO / NO-GO |
+| `/dev-squad:ship [version]` | DevOps ∥ Security ∥ QA ∥ DB engineer (review migration) → Tech writer → kết luận GO / NO-GO |
+| `/dev-squad:db-change <thay đổi>` | DB engineer lập kế hoạch migration không downtime → bạn duyệt → DB engineer ∥ Developer → QA chạy migrate up/down → Reviewer ∥ DB engineer → ghi chú rollout |
+| `/dev-squad:incident <sự cố>` | SRE đánh giá & đề xuất giảm thiểu → bạn duyệt → tìm nguyên nhân gốc (Debugger / Perf / DB / DevOps) → fix → postmortem → PM tạo action items |
+| `/dev-squad:upgrade <mục tiêu>` | Upgrader kiểm kê & lập kế hoạch → bạn duyệt → nâng từng bước có test → QA ∥ Security ∥ Perf → Reviewer → CHANGELOG |
 | `/dev-squad:perf <vấn đề>` | Performance engineer đo baseline & tìm bottleneck → Developer fix → QA ∥ đo lại trước/sau → Reviewer |
 
 Ngoài ra skill `squad-playbook` giúp Claude tự biết nên gọi agent nào khi bạn nói kiểu *"dùng squad làm…"*.
 
 ## Skill `load-simulation` — giả lập tải đột biến
 
-Phần lớn sự cố performance không xảy ra lúc tải bình thường, mà xảy ra khi traffic **tăng đột ngột**: chạy campaign, cron job trùng giờ cao điểm, retry storm, consumer khởi động lại với backlog lớn, cache bị flush sau deploy… Skill này được nạp sẵn cho `performance-engineer` (bạn cũng có thể gọi trực tiếp bằng `/dev-squad:load-simulation`). Nó giúp agent **tự dựng tool tái hiện sự cố** ngay trong dự án của bạn, tại `.squad/perf/<kịch-bản>/`, rồi đo lại trước/sau khi sửa.
+Phần lớn sự cố performance không xảy ra lúc tải bình thường, mà xảy ra khi traffic **tăng đột ngột**: chạy campaign, cron job trùng giờ cao điểm, retry storm, consumer khởi động lại với backlog lớn, cache bị flush sau deploy… Skill này được nạp sẵn cho `performance-engineer` và `sre-incident-responder` (bạn cũng có thể gọi trực tiếp bằng `/dev-squad:load-simulation`). Nó giúp agent **tự dựng tool tái hiện sự cố** ngay trong dự án của bạn, tại `.squad/perf/<kịch-bản>/`, rồi đo lại trước/sau khi sửa.
 
 | Tool | Giả lập | Cần cài |
 |---|---|---|
@@ -128,6 +134,9 @@ claude --plugin-dir ./agents-squad-team/plugins/dev-squad
 /dev-squad:perf    Consumer topic order-events lag tăng liên tục, có log nack lặp lại cùng offset
 /dev-squad:perf    API GET /orders p95 = 2s, target 300ms
 /dev-squad:perf    Hệ thống chậm hẳn mỗi khi chạy flash sale, cần dựng tool giả lập spike để tái hiện
+/dev-squad:db-change  Thêm cột tenant_id NOT NULL vào bảng orders (80 triệu dòng), không được downtime
+/dev-squad:incident   Checkout trả 5xx từ 14:05 UTC, ngay sau khi deploy v2.3.1
+/dev-squad:upgrade    Spring Boot 2.7 → 3.3 và Java 17 → 21
 ```
 
 **Gọi đích danh một agent:**
@@ -156,14 +165,15 @@ Các agent trao đổi qua file để agent sau có đủ ngữ cảnh:
 ├── adr/0001-<quyet-dinh>.md         # architect
 ├── TASKS.md                         # project-manager (nguồn sự thật về task)
 ├── perf/<kịch-bản>/                 # performance-engineer: tool giả lập tải chạy lại được
-└── reports/<ngày>-<loại>-<slug>.md  # qa / review / security / debug / perf
+├── incidents/<ngày>-<slug>/         # sre-incident-responder: timeline, postmortem
+└── reports/<ngày>-<loại>-<slug>.md  # qa / review / security / debug / perf / upgrade
 ```
 
 Bạn có thể commit `.squad/` để lưu lịch sử planning cho cả team, hoặc thêm vào `.gitignore` nếu chỉ muốn dùng cá nhân.
 
 ## Tuỳ biến
 
-- **Model**: mỗi agent khai báo `model` trong frontmatter (`architect`, `security-auditor`, `performance-engineer` dùng `opus`; `orchestrator` dùng `inherit`; còn lại `sonnet`). Đổi thành `opus`, `sonnet`, `haiku` hoặc `inherit` tuỳ ngân sách.
+- **Model**: mỗi agent khai báo `model` trong frontmatter (`architect`, `security-auditor`, `performance-engineer`, `database-engineer`, `sre-incident-responder` dùng `opus`; `orchestrator` dùng `inherit`; còn lại `sonnet`). Đổi thành `opus`, `sonnet`, `haiku` hoặc `inherit` tuỳ ngân sách.
 - **Quyền công cụ**: sửa trường `tools`. `code-reviewer` và `security-auditor` cố ý không có `Write`/`Edit` để đảm bảo chỉ đọc.
 - **Thêm agent**: tạo file `plugins/dev-squad/agents/<ten>.md` theo mẫu có sẵn, thêm vào bảng trong `orchestrator.md` và `skills/squad-playbook/SKILL.md`.
 - **Ghi đè cho 1 dự án**: copy file agent vào `.claude/agents/` của dự án rồi sửa — agent cấp project được ưu tiên hơn agent của plugin.
@@ -177,8 +187,8 @@ agents-squad-team/
 ├── tests/test_load_simulation.py       # unit test cho engine giả lập tải
 └── plugins/dev-squad/
     ├── .claude-plugin/plugin.json      # manifest plugin
-    ├── agents/                         # 12 agent
-    ├── commands/                       # 8 lệnh workflow
+    ├── agents/                         # 15 agent
+    ├── commands/                       # 11 lệnh workflow
     └── skills/
         ├── squad-playbook/SKILL.md     # playbook điều phối
         └── load-simulation/            # skill giả lập tải đột biến

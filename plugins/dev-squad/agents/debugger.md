@@ -56,6 +56,6 @@ Save to `.squad/reports/<YYYY-MM-DD>-debug-<slug>.md` and summarise inline:
   ### Handoff
   - Status: done | blocked | needs-input
   - Artifacts: <paths created/updated>
-  - Next: <recommended agent> — <what they should do>
+  - Next: <squad agent name, e.g. developer, qa-engineer, database-engineer — or "user"> — <what they should do>
   - Risks / open questions: <...>
   ```

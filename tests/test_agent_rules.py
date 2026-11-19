@@ -51,7 +51,7 @@ class AgentRulesTest(unittest.TestCase):
     def test_developer_never_waits_by_polling(self):
         text = read(os.path.join(PLUGIN, "agents", "developer.md"))
         self.assertIn("Never** wait with `sleep`", text)
-        self.assertIn("Never run the same build twice", text)
+        self.assertIn("Never re-run a build just to avoid waiting", text)
         self.assertIn("Requirements checklist", text)
         self.assertIn(".squad/tmp/.gitignore", text)
 
@@ -73,7 +73,7 @@ class ReviewGateTest(unittest.TestCase):
         for path in sorted(glob.glob(os.path.join(PLUGIN, "commands", "*.md"))):
             name = os.path.basename(path)
             text = read(path)
-            if name in ("review.md", "audit.md") or not re.search(r"\bpush", text):
+            if name == "review.md" or not re.search(r"\bpush", text):  # review.md is the gate itself
                 continue
             with self.subTest(command=name):
                 self.assertIn("review gate", text)

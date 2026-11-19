@@ -24,6 +24,7 @@ description: Playbook for working with the dev-squad agent team — which specia
 | `dev-squad:sre-incident-responder` | Incident triage & mitigation proposals, status updates, postmortems, SLOs/alerts/runbooks | Docs/runbooks; prod changes only with approval |
 | `dev-squad:dependency-upgrader` | Framework/runtime/library upgrades, CVE patches | Yes (stepwise upgrades) |
 | `dev-squad:tech-writer` | README, API docs, changelog, runbooks | Docs only |
+| `dev-squad:squad-auditor` | Audits the squads (dev-squad, lab) from transcripts, `.squad/`, `research/`, git; proposes fixes | Writes only `.squad/audit/` (read-only towards the squad) |
 
 Subagents cannot launch other subagents. Orchestration (the pipelines below) therefore runs from the main session — via the `/dev-squad:*` commands or by following this playbook — or with the orchestrator as the main agent (`claude --agent dev-squad:orchestrator`).
 
@@ -39,6 +40,7 @@ Subagents cannot launch other subagents. Orchestration (the pipelines below) the
 - **Sprint planning** (`/dev-squad:sprint-plan`): BA → (architect) → PM.
 - **Standup** (`/dev-squad:standup`): PM.
 - **Release** (`/dev-squad:ship`): devops ∥ security ∥ QA ∥ database-engineer → tech-writer → GO/NO-GO.
+- **Squad audit** (`/dev-squad:audit`): ≤3 clarifying questions → squad-auditor (transcripts → work inventory → signals → agent assessment → proposals → self-critique) → user picks what to apply.
 - **Anything else** (`/dev-squad:squad`): orchestrator chooses.
 
 Skip steps that add nothing (a one-line fix needs no BA or architect), and say which steps were skipped.
@@ -63,6 +65,7 @@ Agents start with no memory of the conversation. Every brief should contain:
 ├── TASKS.md                    # project-manager (single source of truth)
 ├── perf/<scenario>/            # performance-engineer: runnable load-simulation tools
 ├── incidents/<date>-<slug>/    # sre-incident-responder: timeline.md, postmortem.md
+├── audit/<date>/               # squad-auditor: squad-audit.md, drafts/, evidence/ (keep evidence out of git)
 └── reports/<date>-<type>-<slug>.md   # qa, review, security, debug, perf, upgrade
 ```
 

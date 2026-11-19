@@ -41,3 +41,4 @@ jobs:
           cd plugins/dev-squad/skills/load-simulation/scripts
           python db_burst.py --help > /dev/null
           python http_burst.py --help > /dev/null
+          python ../../squad-audit/scripts/mine_transcripts.py --help > /dev/null

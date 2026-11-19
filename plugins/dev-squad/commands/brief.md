@@ -37,8 +37,9 @@ Run this in the main session: it relies on what has been discussed and done in t
    ```
 
    - No code blocks or stack traces in the brief. At most one short identifier per bullet.
+   - Never include secrets, tokens, connection strings, customer personal data, or internal hostnames and IPs. Refer to them generically ("the payment DB", "a customer account").
    - Explain any jargon the reader may not know in a few words.
    - Lead with impact and decisions; leave implementation detail for the reader to ask about.
 3. **Show** the brief. Offer to save it to `.squad/reports/<YYYY-MM-DD>-brief-<slug>.md`, and to shorten it to a 3-line chat version.
 
-End with `User actions`: anything the user must confirm before sending, such as unconfirmed facts or numbers.
+End with `User actions`: anything the user must confirm before sending, such as unconfirmed facts or numbers. Always include "confirm there is no sensitive data before sending".

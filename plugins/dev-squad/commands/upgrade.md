@@ -18,3 +18,5 @@ $ARGUMENTS
 6. **Document** — `dev-squad:tech-writer` adds a CHANGELOG entry and notes for developers (new minimum runtime, changed config properties, changed defaults).
 
 Do not commit, push or publish unless the user asks. Before any push or MR, apply the review gate from the `squad-playbook` skill: run `/dev-squad:review`, resolve or have the user defer every blocking finding, then push only after the user confirms.
+
+End your final summary with `User actions`: what the user must decide or do now, or "none" (see the `squad-playbook` skill).

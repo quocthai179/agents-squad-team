@@ -107,9 +107,16 @@ class MinerTest(unittest.TestCase):
         with open(hb + ".jsonl", "w") as fh:
             fh.write(json.dumps(ev("user", "2026-11-10T09:09:00Z", "brief", isSidechain=True)) + "\n")
             fh.write(json.dumps(ev("assistant", "2026-11-10T09:09:30Z", tool_use("SubagentHandback", {"message":
-                     "Verdict: REQUEST CHANGES\n### Handoff\n- Status: request-changes\n- Next: developer — fix"}),
+                     "Verdict: REQUEST CHANGES ghp_abcdefghijklmnopqrstuvwxyz123456\n### Handoff\n- Status: request-changes\n- Next: developer — fix"}),
                      isSidechain=True)) + "\n")
         write(hb + ".meta.json", json.dumps({"agentType": "dev-squad:code-reviewer", "finished": True}))
+        bt = os.path.join(proj, "s1", "subagents", "agent-4")  # backticked valid Status; "Status:" also in the body
+        with open(bt + ".jsonl", "w") as fh:
+            fh.write(json.dumps(ev("user", "2026-11-10T09:10:00Z", "brief", isSidechain=True)) + "\n")
+            fh.write(json.dumps(ev("assistant", "2026-11-10T09:10:30Z", [{"type": "text", "text":
+                     "Root cause found.\n- Status: in progress before the fix\n### Handoff\n- Status: `done`\n- Next: developer — x"}],
+                     isSidechain=True)) + "\n")
+        write(bt + ".meta.json", json.dumps({"agentType": "dev-squad:debugger", "finished": True}))
         fork = os.path.join(proj, "s1-fork.jsonl")
         with open(fork, "w") as fh:
             for e in events[:2]:  # copied turn: same timestamp and text as in s1
@@ -175,7 +182,7 @@ class MinerTest(unittest.TestCase):
             self.assertNotIn(secret, mt.snippet(text, 500), text)
 
     def test_in_progress_runs_excluded_from_health(self):
-        self.assertEqual(self.r["overview"]["subagent_runs"], 2)  # agent-1 and the handback agent-3
+        self.assertEqual(self.r["overview"]["subagent_runs"], 3)  # agent-1, handback agent-3, debugger agent-4
         self.assertEqual(self.r["overview"]["subagent_runs_in_progress"], 1)
         self.assertNotIn("dev-squad:squad-auditor", self.r["subagents"])
 
@@ -219,6 +226,26 @@ class MinerTest(unittest.TestCase):
         self.assertEqual(st["no_handoff"], 0)
         self.assertEqual(st["via_handback"], 1)
         self.assertEqual([x["status"] for x in st["invalid_status"]], ["request-changes"])
+        self.assertNotIn("ghp_", read(self.json_out))  # a secret inside a handback report never reaches the output
+
+    def test_backticked_status_is_valid_and_body_status_ignored(self):
+        st = self.r["subagents"]["dev-squad:debugger"]
+        self.assertEqual(st["invalid_status"], [])
+        self.assertEqual(st["no_handoff"], 0)
+
+    def test_forked_cost_is_flagged(self):
+        self.assertEqual(self.r["overview"]["forked_sessions"], 1)
+        self.assertIn("upper bound", read(self.md_out))
+
+    def test_adoption_without_usage(self):
+        out = os.path.join(self.tmp.name, "lab.json")
+        subprocess.run([sys.executable, SCRIPT, "--root", self.root, "--since", "2026-11-01", "--until", "2026-11-30",
+                        "--scope", "lab", "--plugins-root", self.plugins, "--json", out,
+                        "--md", os.path.join(self.tmp.name, "lab.md")], check=True, capture_output=True)
+        a = json.loads(read(out))["report"]["adoption"]["lab"]
+        self.assertIsNone(a["first_use"])
+        self.assertEqual(a["prompts_using"], 0)
+        self.assertEqual(a["prompts_since_first_use"], 0)
 
     def test_fork_duplicates_and_harness_commands(self):
         o = self.r["overview"]
@@ -231,7 +258,7 @@ class MinerTest(unittest.TestCase):
     def test_totals_and_adoption(self):
         self.assertEqual(self.r["signals"]["totals"]["corrections"], 1)
         a = self.r["adoption"]["dev-squad"]
-        self.assertEqual(a["prompts_using"], 2)  # code-reviewer turn + /dev-squad:review
+        self.assertEqual(a["prompts_using"], 3)  # code-reviewer turn, /dev-squad:review and the bare /review
         self.assertTrue(a["first_use"].startswith("2026-11-10T09:00"))
 
     def test_skipped_steps(self):

@@ -18,3 +18,5 @@ Arguments: $ARGUMENTS
 5. Suggest re-running `/dev-squad:audit` in 2–4 weeks with the same window length, and comparing the metrics table.
 
 Never commit evidence files: they contain redacted conversation snippets. Do not commit or push unless the user asks. Before any push or MR, apply the review gate from the `squad-playbook` skill: run `/dev-squad:review`, resolve or have the user defer every blocking finding, then push only after the user confirms.
+
+End your final summary with `User actions`: what the user must decide or do now, or "none" (see the `squad-playbook` skill).

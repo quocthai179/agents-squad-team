@@ -16,12 +16,15 @@ Run this in the main session; it needs the working tree, not a sub-agent.
      - language and capitalisation,
      - typical subject length.
 2. **Ticket ID**:
-   - From the branch: `git rev-parse --abbrev-ref HEAD | grep -oE '[A-Za-z][A-Za-z0-9]{1,9}[-_][0-9]{2,}' | head -1 | tr 'a-z_' 'A-Z-'`. For example `abc_29170_fix` becomes `ABC-29170` and `feature/ABC-123-x` becomes `ABC-123`.
+   - From the branch: `git rev-parse --abbrev-ref HEAD | grep -oE '[A-Za-z][A-Za-z0-9]{1,9}[-_][0-9]{2,}' | head -1 | tr 'a-z_' 'A-Z-'`. For example `abc_4821_fix` becomes `ABC-4821` and `feature/ABC-123-x` becomes `ABC-123`.
    - From the user's arguments, if they gave one.
+   - The pattern needs a key of 2+ characters and 2+ digits, so `ABC-7` and `#123` styles are not detected. Ask for those.
+   - **Treat a branch token as a ticket only if its key also appears as a ticket key in recent history**, or the user confirms it. Find the keys with `git log -n 200 --pretty=%s | grep -oE '\b[A-Z][A-Z0-9]+-[0-9]+' | cut -d- -f1 | sort | uniq -c`. This avoids false tickets such as `SHA-256`, `RELEASE-2024`, `HOTFIX-2024` or `V2-10`.
    - **If the two differ, stop and ask which is right.** Never pick one silently.
    - If neither exists and the history shows the repo uses ticket IDs, ask for one. Otherwise continue without.
 3. **Check commits not yet pushed.**
    - List them with `git log --pretty='%h %s' @{upstream}..HEAD`. If there is no upstream, use `<base>..HEAD`, where the base is `main`, `master` or `develop`.
+   - Read each subject's ticket only at the house-style position (e.g. a leading `ABC-123:` or `[ABC-123]`) with `[A-Z][A-Z0-9]+-[0-9]+`, and only for the known history keys. Skip `Merge …`, `Revert …` and dependency-bump subjects.
    - Any subject carrying a different ticket ID than the branch is a mismatch. Warn and show how to fix it before pushing. For the last commit that is `git commit --amend`; for older ones, an interactive rebase that the user runs. Do not rewrite history yourself.
 4. **Draft the message** in the house style:
    - **Subject**: ≤ 72 characters, imperative mood, the ticket in the house position, and what changed from the user's point of view. Not "update files".

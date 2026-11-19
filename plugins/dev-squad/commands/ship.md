@@ -16,3 +16,5 @@ If no version was given, treat it as the next release.
 3. Report a **GO / NO-GO** to the user with: checklist results, blocking issues (with owners), test results, security findings, and the draft release notes.
 
 Never tag, push, publish or deploy unless the user explicitly asks. Every push, tag or MR for the release goes through the review gate from the `squad-playbook` skill: run `/dev-squad:review` on the release diff, resolve or have the user defer every blocking finding, then push only after the user confirms.
+
+End your final summary with `User actions`: what the user must decide or do now, or "none" (see the `squad-playbook` skill).

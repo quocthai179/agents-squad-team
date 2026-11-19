@@ -85,8 +85,8 @@ IN_PROGRESS_SECONDS = 2 * 3600  # an unfinished run untouched for longer than th
 SLASH = re.compile(r"<command-name>\s*/?([^<\s]+)\s*</command-name>")
 SLASH_ARGS = re.compile(r"<command-args>(.*?)</command-args>", re.S)
 HANDOFF = re.compile(r"###\s*Handoff", re.I)
-HANDOFF_STATUS = re.compile(r"Status:\s*\**\s*(done|blocked|needs-input)\b", re.I)
-HANDOFF_STATUS_ANY = re.compile(r"Status:\s*\**\s*`?([A-Za-z][\w-]*)", re.I)
+HANDOFF_STATUS = re.compile(r"^\s*-\s*\**Status:?\**:?\s*\**\s*`?(done|blocked|needs-input)\b", re.I | re.M)
+HANDOFF_STATUS_ANY = re.compile(r"^\s*-\s*\**Status:?\**:?\s*\**\s*`?([A-Za-z][\w-]*)", re.I | re.M)
 HANDBACK_TOOLS = {"SubagentHandback"}  # sub-agents may deliver their final report through this tool
 BUILTIN_COMMANDS = {  # Claude Code harness commands: not squad work, never counted as prompts
     "add-dir", "agents", "bug", "clear", "compact", "config", "context", "cost", "doctor", "exit", "export",
@@ -284,13 +284,15 @@ def parse_subagent(path, known_agents):
             info["tool_errors"] += sum(1 for x in blocks(c) if x.get("type") == "tool_result" and x.get("is_error"))
     lt = info.pop("last_text")
     info["has_handoff"] = bool(HANDOFF.search(lt))
-    st = HANDOFF_STATUS.search(lt)
+    m = HANDOFF.search(lt)
+    block = lt[m.end():] if m else ""  # only the Handoff block, not "Status:" lines in the report body
+    st = HANDOFF_STATUS.search(block)
     info["handoff_status"] = st.group(1).lower() if st else None
-    any_st = HANDOFF_STATUS_ANY.search(lt) if info["has_handoff"] else None
-    info["handoff_status_invalid"] = any_st.group(1) if any_st and not st else None
+    any_st = HANDOFF_STATUS_ANY.search(block) if info["has_handoff"] else None
+    info["handoff_status_invalid"] = redact(any_st.group(1)) if any_st and not st else None
     info["via_handback"] = bool(info.get("via_handback"))
     nx = HANDOFF_NEXT.search(lt)
-    nxt = nx.group(1) if nx else None
+    nxt = redact(nx.group(1)) if nx else None
     info["handoff_next"] = nxt
     if nxt and known_agents:
         short = {k.split(":")[-1] for k in known_agents}
@@ -398,16 +400,17 @@ def dedupe_forks(sessions):
     for s in sessions:  # sorted oldest first, so the original session keeps its prompts
         kept = []
         for p in s["prompts"]:
-            key = (p["ts"], hashlib.sha1(p["_norm"].encode("utf-8", "replace")).hexdigest())
+            key = (p["ts"] or p["ref"], hashlib.sha1(p["_norm"].encode("utf-8", "replace")).hexdigest())
             if key in seen_prompts:
                 removed += 1
                 continue
             seen_prompts.add(key)
             kept.append(p)
+        s["forked_copies"] = len(s["prompts"]) - len(kept)
         s["prompts"] = kept
         runs = []
         for x in s["subagents"]:
-            key = (x["agent"], str(x["start"]), x["tool_uses"])
+            key = (x["agent"], str(x["start"]), x["tool_uses"]) if x["start"] else ("file", x["file"])
             if key not in seen_runs:
                 seen_runs.add(key)
                 runs.append(x)
@@ -548,10 +551,13 @@ def analyse(sessions, defs, args):
         never[kind] = sorted(k for k in defs[kind] if not _used(k, kind, agent_use, cmd_use, skill_use, unique))
 
     adoption = {}
+    shorts = Counter(k.split(":")[-1] for kind in ("agents", "commands", "skills") for k in set(defs[kind]))
+    bare_owner = {k.split(":")[-1]: k.split(":")[0] for kind in ("agents", "commands", "skills") for k in defs[kind]
+                  if ":" in k and shorts[k.split(":")[-1]] == 1}  # bare name -> plugin, only when unambiguous
     for plugin in (args.scope or ["dev-squad"]):
         def uses(p, plugin=plugin):
             names = list(p["agents"]) + list(p["skills"]) + ([p["command"]] if p["command"] else [])
-            return any(n.startswith(plugin + ":") for n in names)
+            return any(n.startswith(plugin + ":") or (":" not in n and bare_owner.get(n) == plugin) for n in names)
         first = min((p["ts"] for p in prompts if p["ts"] and uses(p)), default=None)
         since_prompts = [p for p in prompts if first and p["ts"] and p["ts"] >= first]
         since_sessions = [s for s in sessions if any(p["ts"] and first and p["ts"] >= first for p in s["prompts"])]
@@ -573,6 +579,7 @@ def analyse(sessions, defs, args):
             "projects": projects.most_common(), "cost_usd": round(sum(s["cost_usd"] or 0 for s in sessions), 2),
             "sessions_with_squad": sum(1 for s in sessions if any(p["agents"] or p["command"] or p["skills"] for p in s["prompts"])),
             "fork_duplicate_prompts": getattr(args, "fork_duplicates", 0),
+            "forked_sessions": sum(1 for s in sessions if s.get("forked_copies")),
             "harness_commands": sum((s["harness_commands"] for s in sessions), Counter()).most_common(),
         },
         "adoption": adoption,
@@ -608,7 +615,8 @@ def to_markdown(r, args):
     o = r["overview"]
     L = [f"# Squad usage evidence ({args.window_label})", "",
          f"- Sessions: **{o['sessions']}** ({o['sessions_with_squad']} used a squad agent/command/skill) · "
-         f"prompts: **{o['prompts']}** · sub-agent runs: **{o['subagent_runs']}** · cost of these sessions (whole-session totals): ${o['cost_usd']}",
+         f"prompts: **{o['prompts']}** · sub-agent runs: **{o['subagent_runs']}** · cost of these sessions (whole-session totals): ${o['cost_usd']}"
+         + (f" — upper bound: {o['forked_sessions']} forked session(s) also include the cost of copied turns" if o["forked_sessions"] else ""),
          f"- Period covered by data: {o['first']} → {o['last']}",
          ("- ⚠️ All sub-agent runs look in progress; health metrics are empty. "
           if o['subagent_runs'] == 0 and o['subagent_runs_in_progress'] else "")
@@ -778,8 +786,7 @@ def main():
         s["prompts"] = [p for p in s["prompts"] if p["ts"] and since <= dt.datetime.fromisoformat(p["ts"]) < until]
         s["subagents"] = [x for x in s["subagents"] if x["start"] is None or since <= x["start"] < until]
         if not s["prompts"] and not s["subagents"]:
-            continue
-        finalize_session(s)
+            continue  # session flags are derived later by dedupe_forks -> finalize_session
         sessions.append(s)
     # oldest first; on equal start times the older file is the original and its fork comes later
     sessions.sort(key=lambda s: (s["start"] or dt.datetime.min.replace(tzinfo=dt.timezone.utc), s["mtime"]))
@@ -790,6 +797,7 @@ def main():
     report["overview"]["files_outside_window"] = skipped_old
     for s in sessions:
         s.pop("mtime", None)
+        s.pop("forked_copies", None)
         for p in s["prompts"]:
             p.pop("_norm", None)
 

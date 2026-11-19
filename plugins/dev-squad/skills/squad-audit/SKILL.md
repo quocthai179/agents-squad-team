@@ -11,7 +11,9 @@ Tools live in this skill's `scripts/` directory (its base directory is shown whe
 
 ## 1. Collect evidence (in this order)
 
-Create `.squad/audit/<YYYY-MM-DD>/` in the current project and put all evidence files in `evidence/` inside it. Evidence holds redacted conversation snippets: recommend adding `.squad/audit/*/evidence/` to `.gitignore`.
+Create `.squad/audit/<YYYY-MM-DD>/` in the current project and put all evidence files in `evidence/` inside it. Evidence holds redacted conversation snippets, so **first** make sure `.squad/audit/.gitignore` exists and contains `*/evidence/`. Create it if it is missing. This stops evidence from being committed by accident.
+
+Exclude sandboxes, smoke tests and the audit's own working copy with `--exclude-project <substring>`. Runs that are still in progress, including the current audit, are excluded from sub-agent health metrics automatically.
 
 **1. Session transcripts.** These are in `~/.claude/projects/**/*.jsonl`, with sub-agent runs in `<session>/subagents/`.
 

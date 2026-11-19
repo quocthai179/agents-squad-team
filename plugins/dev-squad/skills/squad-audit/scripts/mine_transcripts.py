@@ -27,6 +27,7 @@ import glob
 import json
 import os
 import re
+import statistics
 import sys
 from collections import Counter, defaultdict
 
@@ -79,6 +80,7 @@ TEST_CMD = re.compile(r"(mvnw?|gradlew?)\b.*\b(test|verify|check)\b|\bpytest\b|\
                       r"\b(npm|pnpm|yarn) (run )?test\b|\bgo test\b|\bjest\b|\bvitest\b|\bcargo test\b|"
                       r"quarkus:test|\bplaywright test\b", re.I)
 CHANGE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+IN_PROGRESS_SECONDS = 2 * 3600  # an unfinished run untouched for longer than this is counted, not skipped
 SLASH = re.compile(r"<command-name>\s*/?([^<\s]+)\s*</command-name>")
 SLASH_ARGS = re.compile(r"<command-args>(.*?)</command-args>", re.S)
 HANDOFF = re.compile(r"###\s*Handoff", re.I)
@@ -92,9 +94,16 @@ SECRET_PATTERNS = [
     (re.compile(r"\b(AKIA|ASIA)[0-9A-Z]{16}\b"), "[aws-key]"),
     (re.compile(r"\b(ghp|gho|ghs|ghu|github_pat)_[A-Za-z0-9_]{20,}\b"), "[github-token]"),
     (re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b"), "[slack-token]"),
-    (re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"), "[api-key]"),
+    (re.compile(r"\b(sk|rk|pk)[-_](live|test|ant|proj)?[-_]?[A-Za-z0-9_-]{16,}\b"), "[api-key]"),
+    (re.compile(r"\bglpat-[A-Za-z0-9_-]{16,}\b"), "[gitlab-token]"),
+    (re.compile(r"\bAIza[0-9A-Za-z_-]{30,}\b"), "[google-key]"),
+    (re.compile(r"\bnpm_[A-Za-z0-9]{30,}\b"), "[npm-token]"),
+    (re.compile(r"(?i)\bauthorization\s*[:=]\s*(basic|bearer|token|digest)?\s*[^\s\"',}]+"), "authorization=[redacted]"),
+    (re.compile(r"""(?i)["']?\b(password|passwd|pwd|secret|client[_-]?secret|token|access[_-]?token|refresh[_-]?token|"""
+                r"""api[_-]?key|apikey|access[_-]?key|private[_-]?key)\b["']?\s*[:=]\s*["']?[^\s"',}]+["']?"""),
+     r"\1=[redacted]"),
     (re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"), "[jwt]"),
-    (re.compile(r"(?i)\b(bearer|token|apikey|api_key|password|passwd|pwd|secret)\b(\s*[:=]\s*|\s+)\S+"), r"\1=[redacted]"),
+    (re.compile(r"(?i)\b(bearer|token|apikey|api_key|password|passwd|pwd|secret)\b\s+[A-Za-z0-9._~+/=-]{8,}"), r"\1 [redacted]"),
     (re.compile(r"(?i)\b(postgres(ql)?|mysql|mongodb(\+srv)?|redis|amqp)://[^\s@/]+@"), r"\1://[redacted]@"),
     (re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"), "[email]"),
     (re.compile(r"\b[A-Fa-f0-9]{40,}\b"), "[hex]"),
@@ -187,18 +196,30 @@ def iter_jsonl(path):
             if not line:
                 continue
             try:
-                yield i, json.loads(line)
+                obj = json.loads(line)
             except ValueError:
                 continue
+            if isinstance(obj, dict):
+                yield i, obj
+
+
+def msg_of(d):
+    m = d.get("message")
+    return m if isinstance(m, dict) else {}
+
+
+def blocks(content):
+    return [x for x in content if isinstance(x, dict)] if isinstance(content, list) else []
 
 
 def parse_ts(s):
     if not s:
         return None
     try:
-        return dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
+        ts = dt.datetime.fromisoformat(str(s).replace("Z", "+00:00"))
     except ValueError:
         return None
+    return ts if ts.tzinfo else ts.replace(tzinfo=dt.timezone.utc)
 
 
 def text_of(content):
@@ -223,6 +244,8 @@ def parse_subagent(path, known_agents):
         except (OSError, ValueError):
             meta = {}
     info = {"file": path, "agent": meta.get("agentType") or "unknown", "finished": meta.get("finished"),
+            "in_progress": bool(meta) and meta.get("finished") is None
+            and (dt.datetime.now().timestamp() - os.path.getmtime(path)) < IN_PROGRESS_SECONDS,
             "description": meta.get("description", ""), "tool_uses": 0, "tool_errors": 0,
             "changed_code": False, "ran_tests": False, "last_text": "", "first_ts": None, "last_ts": None}
     for _, d in iter_jsonl(path):
@@ -230,10 +253,9 @@ def parse_subagent(path, known_agents):
         if ts:
             info["first_ts"] = info["first_ts"] or ts
             info["last_ts"] = ts
-        m = d.get("message") or {}
-        c = m.get("content")
+        c = msg_of(d).get("content")
         if d.get("type") == "assistant" and isinstance(c, list):
-            for x in c:
+            for x in blocks(c):
                 if x.get("type") == "tool_use":
                     info["tool_uses"] += 1
                     if x.get("name") in CHANGE_TOOLS:
@@ -244,7 +266,7 @@ def parse_subagent(path, known_agents):
             if t.strip():
                 info["last_text"] = t
         elif d.get("type") == "user" and isinstance(c, list):
-            info["tool_errors"] += sum(1 for x in c if isinstance(x, dict) and x.get("type") == "tool_result" and x.get("is_error"))
+            info["tool_errors"] += sum(1 for x in blocks(c) if x.get("type") == "tool_result" and x.get("is_error"))
     lt = info.pop("last_text")
     info["has_handoff"] = bool(HANDOFF.search(lt))
     st = HANDOFF_STATUS.search(lt)
@@ -288,16 +310,17 @@ def parse_session(path, args, known_agents):
             continue
         if d.get("isSidechain"):
             continue
-        m = d.get("message") or {}
-        c = m.get("content")
+        c = msg_of(d).get("content")
         if typ == "user" and not d.get("isMeta") and not has_tool_result(c):
             raw = text_of(c)
+            if not raw.strip():
+                continue
             if raw.startswith("[Request interrupted"):
                 sess["interrupts"] += 1
                 if turn is not None:
                     turn["interrupted"] = True
                 continue
-            cmd = SLASH.search(raw)
+            cmd = SLASH.search(raw[:400]) if raw.lstrip().startswith("<command-") else None
             if not cmd and raw.lstrip().startswith(NOISE_PREFIXES):
                 continue
             close_turn()
@@ -313,10 +336,11 @@ def parse_session(path, args, known_agents):
                     "command": command,
                     "agents": [], "skills": [], "correction": bool(CORRECTION.search(text)) and len(text) < 1200,
                     "pasted_handoff": bool(HANDOFF.search(text)), "large_paste": len(text) > args.large_paste,
-                    "interrupted": False, "text": snippet(text, args.snippet), "_norm": text}
+                    "changed_code": False, "ran_tests": False, "tool_errors": 0,
+                    "interrupted": False, "text": snippet(text, args.snippet), "_norm": text[:20000]}
             continue
         if typ == "assistant" and isinstance(c, list):
-            for x in c:
+            for x in blocks(c):
                 if x.get("type") != "tool_use":
                     continue
                 name, inp = x.get("name"), x.get("input") or {}
@@ -330,12 +354,12 @@ def parse_session(path, args, known_agents):
                     sess["skills"][s] += 1
                     if turn is not None:
                         turn["skills"].append(s)
-                elif name in CHANGE_TOOLS:
-                    sess["changed_code"] = True
-                elif name == "Bash" and TEST_CMD.search(str(inp.get("command", ""))):
-                    sess["ran_tests"] = True
-        elif typ == "user" and isinstance(c, list):
-            sess["tool_errors"] += sum(1 for x in c if isinstance(x, dict) and x.get("type") == "tool_result" and x.get("is_error"))
+                elif name in CHANGE_TOOLS and turn is not None:
+                    turn["changed_code"] = True
+                elif name == "Bash" and turn is not None and TEST_CMD.search(str(inp.get("command", ""))):
+                    turn["ran_tests"] = True
+        elif typ == "user" and isinstance(c, list) and turn is not None:
+            turn["tool_errors"] += sum(1 for x in blocks(c) if x.get("type") == "tool_result" and x.get("is_error"))
     close_turn()
 
     sub_dir = path[: -len(".jsonl")]
@@ -343,9 +367,14 @@ def parse_session(path, args, known_agents):
         info = parse_subagent(sp, known_agents)
         info["file"] = os.path.relpath(sp, os.path.expanduser(args.root))
         sess["subagents"].append(info)
-        sess["changed_code"] |= info["changed_code"]
-        sess["ran_tests"] |= info["ran_tests"]
     return sess
+
+
+def finalize_session(s):
+    """Derive session flags from the in-window turns and sub-agent runs only."""
+    s["changed_code"] = any(p["changed_code"] for p in s["prompts"]) or any(x["changed_code"] for x in s["subagents"])
+    s["ran_tests"] = any(p["ran_tests"] for p in s["prompts"]) or any(x["ran_tests"] for x in s["subagents"])
+    s["tool_errors"] = sum(p["tool_errors"] for p in s["prompts"])
 
 
 # --------------------------------------------------------------------------- analysis
@@ -393,18 +422,21 @@ def analyse(sessions, defs, args):
     repeated = [{"sessions": n, **sent_examples[k]} for n, k in repeated[:25]]
 
     # near-duplicate prompt openings (same first words) across sessions
-    openings = defaultdict(list)
-    for p in prompts:
-        if p["command"]:
-            continue
-        key = " ".join(norm_sentence(p["_norm"]).split()[:8])
-        if len(key.split()) >= 5:
-            openings[key].append(p)
-    similar = sorted(([len(v), k] for k, v in openings.items() if len(v) >= args.repeat), reverse=True)
+    openings, opening_sessions = defaultdict(list), defaultdict(set)
+    for s in sessions:
+        for p in s["prompts"]:
+            if p["command"]:
+                continue
+            key = " ".join(norm_sentence(p["_norm"]).split()[:8])
+            if len(key.split()) >= 5:
+                openings[key].append(p)
+                opening_sessions[key].add(s["file"])
+    similar = sorted(([len(opening_sessions[k]), k] for k in openings if len(opening_sessions[k]) >= args.repeat),
+                     reverse=True)
     similar = [{"count": n, "examples": [{"ref": x["ref"], "text": x["text"]} for x in openings[k][:3]]}
                for n, k in similar[:15]]
 
-    corrections, prev = [], {}
+    corrections = []
     for s in sessions:
         last_actor = None
         for p in s["prompts"]:
@@ -426,6 +458,8 @@ def analyse(sessions, defs, args):
                    for p in prompts if p["interrupted"]][:20]
 
     subs = [x for s in sessions for x in s["subagents"]]
+    in_progress = [x for x in subs if x["in_progress"]]
+    subs = [x for x in subs if not x["in_progress"]]  # still running (e.g. this very audit): would skew health metrics
     sub_stats = defaultdict(lambda: {"runs": 0, "unfinished": 0, "tool_errors": 0, "no_handoff": 0,
                                      "blocked_or_input": 0, "invalid_next": [], "durations": []})
     for x in subs:
@@ -433,8 +467,7 @@ def analyse(sessions, defs, args):
         st["runs"] += 1
         st["unfinished"] += 1 if x["finished"] is False else 0
         st["tool_errors"] += x["tool_errors"]
-        squad_agent = any(x["agent"].startswith(f"{sc}:") for sc in (args.scope or ["dev-squad"]))
-        if squad_agent and not x["has_handoff"]:
+        if x["agent"].startswith("dev-squad:") and not x["has_handoff"]:  # Handoff is a dev-squad convention
             st["no_handoff"] += 1
         if x["handoff_status"] in ("blocked", "needs-input"):
             st["blocked_or_input"] += 1
@@ -443,8 +476,8 @@ def analyse(sessions, defs, args):
         if x["duration_s"] is not None:
             st["durations"].append(x["duration_s"])
     for st in sub_stats.values():
-        d = sorted(st.pop("durations"))
-        st["median_duration_s"] = d[len(d) // 2] if d else None
+        d = st.pop("durations")
+        st["median_duration_s"] = round(statistics.median(d), 1) if d else None
 
     skipped = []
     for s in sessions:
@@ -455,13 +488,17 @@ def analyse(sessions, defs, args):
                 skipped.append({"file": s["file"], "project": s["project"], "ran_tests": s["ran_tests"],
                                 "reviewed": reviewed})
 
-    never = {kind: sorted(k for k in defs[kind] if not _used(k, kind, agent_use, cmd_use, skill_use))
-             for kind in ("agents", "commands", "skills")}
+    never = {}
+    for kind in ("agents", "commands", "skills"):
+        shorts = Counter(k.split(":")[-1] for k in defs[kind])
+        unique = frozenset(n for n, c in shorts.items() if c == 1)
+        never[kind] = sorted(k for k in defs[kind] if not _used(k, kind, agent_use, cmd_use, skill_use, unique))
 
     projects = Counter(s["project"] for s in sessions)
     return {
         "overview": {
             "sessions": len(sessions), "prompts": len(prompts), "subagent_runs": len(subs),
+            "subagent_runs_in_progress": len(in_progress),
             "first": min((p["ts"] for p in prompts if p["ts"]), default=None),
             "last": max((p["ts"] for p in prompts if p["ts"]), default=None),
             "projects": projects.most_common(), "cost_usd": round(sum(s["cost_usd"] or 0 for s in sessions), 2),
@@ -484,11 +521,12 @@ def analyse(sessions, defs, args):
     }
 
 
-def _used(qualified, kind, agent_use, cmd_use, skill_use):
-    """Plugin definitions are invoked by their qualified name (plugin:name); loose ones by bare name."""
+def _used(qualified, kind, agent_use, cmd_use, skill_use, unique_short=frozenset()):
+    """Match by qualified name (plugin:name); a bare name also counts when only one definition has it."""
     short = qualified.split(":")[-1]
     pool = agent_use if kind == "agents" else cmd_use + skill_use  # a skill can also run as /plugin:skill
-    return any(u == qualified or (":" not in qualified and u == short) for u in pool)
+    bare_ok = ":" not in qualified or short in unique_short
+    return any(u == qualified or (bare_ok and u == short) for u in pool)
 
 
 # --------------------------------------------------------------------------- output
@@ -497,8 +535,12 @@ def to_markdown(r, args):
     o = r["overview"]
     L = [f"# Squad usage evidence ({args.window_label})", "",
          f"- Sessions: **{o['sessions']}** ({o['sessions_with_squad']} used a squad agent/command/skill) · "
-         f"prompts: **{o['prompts']}** · sub-agent runs: **{o['subagent_runs']}** · cost: ${o['cost_usd']}",
+         f"prompts: **{o['prompts']}** · sub-agent runs: **{o['subagent_runs']}** · cost of these sessions (whole-session totals): ${o['cost_usd']}",
          f"- Period covered by data: {o['first']} → {o['last']}",
+         ("- ⚠️ All sub-agent runs look in progress; health metrics are empty. "
+          if o['subagent_runs'] == 0 and o['subagent_runs_in_progress'] else "")
+         + f"- In-progress sub-agent runs excluded from health metrics: {o['subagent_runs_in_progress']}"
+         + (f" · excluded projects: {', '.join(args.exclude_project)}" if args.exclude_project else ""),
          "- Projects: " + ", ".join(f"`{p}` ({n})" for p, n in o["projects"][:10]), ""]
 
     L += ["## Work inventory (heuristic classification of user prompts)", "",
@@ -560,17 +602,19 @@ def show_context(root, ref, radius, width):
     """Print a readable view of the events around `<relative file>:<line>`."""
     rel, _, line = ref.rpartition(":")
     path = os.path.join(os.path.expanduser(root), rel)
+    if not rel or not line.isdigit() or not os.path.isfile(path):
+        sys.exit(f"Bad ref {ref!r}: expected <file relative to --root>:<line> of an existing transcript")
     target = int(line)
     for ln, d in iter_jsonl(path):
         if ln < target - radius * 3 or ln > target + radius * 3:
             continue
-        typ, m = d.get("type"), d.get("message") or {}
+        typ = d.get("type")
         if typ not in ("user", "assistant") or d.get("isMeta"):
             continue
-        c = m.get("content")
+        c = msg_of(d).get("content")
         parts = []
         if isinstance(c, list):
-            for x in c:
+            for x in blocks(c):
                 if x.get("type") == "text" and x.get("text", "").strip():
                     parts.append(snippet(x["text"], width))
                 elif x.get("type") == "tool_use":
@@ -588,10 +632,13 @@ def show_context(root, ref, radius, width):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default="~/.claude/projects", help="transcripts root (default ~/.claude/projects)")
+    # note: cost_usd in the overview is the whole-session total reported by Claude Code, not window-limited
     ap.add_argument("--days", type=int, default=30, help="look-back window in days (default 30)")
     ap.add_argument("--since", help="start date YYYY-MM-DD (overrides --days)")
     ap.add_argument("--until", help="end date YYYY-MM-DD (inclusive)")
     ap.add_argument("--project", action="append", default=[], help="only sessions whose cwd contains this; repeatable")
+    ap.add_argument("--exclude-project", action="append", default=[],
+                    help="skip sessions whose cwd or path contains this (sandboxes, smoke tests, the current audit run)")
     ap.add_argument("--scope", action="append", default=[], help="plugin names to audit, e.g. dev-squad, lab; repeatable")
     ap.add_argument("--plugins-root", action="append", default=[],
                     help="where plugin definitions live (default ~/.claude/plugins); repeatable")
@@ -625,20 +672,23 @@ def main():
 
     sessions, skipped_old = [], 0
     for path in glob.glob(os.path.join(root, "*", "*.jsonl")):
-        if args.project and not any(p in path for p in args.project):
-            continue
+        rel = os.path.relpath(path, root)
         if dt.datetime.fromtimestamp(os.path.getmtime(path), dt.timezone.utc) < since:
             skipped_old += 1
             continue
         s = parse_session(path, args, defs["agents"])
+        where = (s["project"] or "", rel)
+        if args.project and not any(p in w for p in args.project for w in where):
+            continue
+        if any(x in w for x in args.exclude_project for w in where):
+            continue
         s["prompts"] = [p for p in s["prompts"] if p["ts"] and since <= dt.datetime.fromisoformat(p["ts"]) < until]
         s["subagents"] = [x for x in s["subagents"] if x["start"] is None or since <= x["start"] < until]
         if not s["prompts"] and not s["subagents"]:
             continue
-        if args.project and s["project"] and not any(p in s["project"] or p in path for p in args.project):
-            continue
+        finalize_session(s)
         sessions.append(s)
-    sessions.sort(key=lambda s: s["start"])
+    sessions.sort(key=lambda s: s["start"] or dt.datetime.min.replace(tzinfo=dt.timezone.utc))
 
     report = analyse(sessions, defs, args)
     report["overview"]["window"] = args.window_label

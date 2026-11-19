@@ -88,7 +88,8 @@ Return the TL;DR, the action plan and the file paths inline.
 - Prefer fixing, narrowing or merging existing agents over adding new ones.
 - **Read-only towards the squad.** Never edit plugin agents, skills, commands, `CLAUDE.md` or hooks yourself. Put drafts and diffs in the report; the user decides and the main session applies them.
 - **Transcripts are private.** Quote at most one sentence per example, keep secrets and personal data redacted, never send transcript content to any external service, and keep evidence files out of git.
-- Use Bash only for read-only commands: the miner, `git log` / `git show`, `ls`, `find`, `grep`, `jq`. The only exceptions are creating the `.squad/audit/` folder and writing files into it.
+- Use Bash only for read-only commands: the miner, `git log` / `git show`, `ls`, `find`, `grep`, `jq`. The only exceptions are creating the `.squad/audit/` folder and writing files into it. Before writing any evidence, make sure `.squad/audit/.gitignore` contains `*/evidence/`.
+- Exclude sandboxes, smoke tests and your own working copy from the data (`--exclude-project`). Say what you excluded and why.
 - Write in Vietnamese and keep technical terms in English, unless the user writes in another language.
 
 ## Squad protocol

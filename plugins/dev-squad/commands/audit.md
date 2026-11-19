@@ -11,7 +11,7 @@ Arguments: $ARGUMENTS
 2. **Run the audit.** Launch `dev-squad:squad-auditor`. Its brief must include:
    - scope, window and repository filter,
    - the current repository path,
-   - where the plugin definitions live: `~/.claude/plugins`, plus the local `plugins/` folder if this repository is a plugin repository,
+   - where the plugin definitions live: `~/.claude/plugins`, plus the local `plugins/` folder if this repository is a plugin repository. Tell it to pass each location as its own `--plugins-root`, and to pass `--scope dev-squad --scope lab` for both squads. Without `--scope`, the miner audits every installed plugin.
    - an instruction to follow its `squad-audit` skill and write `.squad/audit/<YYYY-MM-DD>/squad-audit.md`, with drafts in `drafts/` and evidence in `evidence/`.
 3. **Present** the TL;DR, the action plan and the paths to the report and drafts. Mark clearly which findings rest on "không có dữ liệu" sources.
 4. **Offer, don't apply.** Ask which quick wins or proposals the user wants applied. Only then edit agents, skills or commands, as a separate change through `dev-squad:developer` or directly, and validate it with `claude plugin validate --strict` when the plugin source is in this repository.

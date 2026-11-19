@@ -17,4 +17,6 @@ Arguments: $ARGUMENTS
 4. **Offer, don't apply.** Ask which quick wins or proposals the user wants applied. Only then edit agents, skills or commands, as a separate change through `dev-squad:developer` or directly, and validate it with `claude plugin validate --strict` when the plugin source is in this repository.
 5. Suggest re-running `/dev-squad:audit` in 2–4 weeks with the same window length, and comparing the metrics table.
 
-Never commit evidence files: they contain redacted conversation snippets. Do not commit or push unless the user asks.
+Never commit evidence files: they contain redacted conversation snippets. Do not commit or push unless the user asks. Before any push or MR, apply the review gate from the `squad-playbook` skill: run `/dev-squad:review`, resolve or have the user defer every blocking finding, then push only after the user confirms.
+
+End your final summary with `User actions`: what the user must decide or do now, or "none" (see the `squad-playbook` skill).

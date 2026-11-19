@@ -15,4 +15,6 @@ $ARGUMENTS
 5. **Review** — launch `dev-squad:code-reviewer` on the diff.
 6. Summarise for the user: root bottleneck(s), fixes, before/after metrics, trade-offs accepted, follow-ups (monitoring, load tests in CI).
 
-Do not commit or push unless the user asks.
+Do not commit or push unless the user asks. Before any push or MR, apply the review gate from the `squad-playbook` skill: run `/dev-squad:review`, resolve or have the user defer every blocking finding, then push only after the user confirms.
+
+End your final summary with `User actions`: what the user must decide or do now, or "none" (see the `squad-playbook` skill).

@@ -24,6 +24,7 @@ Examples:
 import argparse
 import datetime as dt
 import glob
+import hashlib
 import json
 import os
 import re
@@ -84,7 +85,14 @@ IN_PROGRESS_SECONDS = 2 * 3600  # an unfinished run untouched for longer than th
 SLASH = re.compile(r"<command-name>\s*/?([^<\s]+)\s*</command-name>")
 SLASH_ARGS = re.compile(r"<command-args>(.*?)</command-args>", re.S)
 HANDOFF = re.compile(r"###\s*Handoff", re.I)
-HANDOFF_STATUS = re.compile(r"Status:\s*\**\s*(done|blocked|needs-input)", re.I)
+HANDOFF_STATUS = re.compile(r"^\s*-\s*\**Status:?\**:?\s*\**\s*`?(done|blocked|needs-input)\b", re.I | re.M)
+HANDOFF_STATUS_ANY = re.compile(r"^\s*-\s*\**Status:?\**:?\s*\**\s*`?([A-Za-z][\w-]*)", re.I | re.M)
+HANDBACK_TOOLS = {"SubagentHandback"}  # sub-agents may deliver their final report through this tool
+BUILTIN_COMMANDS = {  # Claude Code harness commands: not squad work, never counted as prompts
+    "add-dir", "agents", "bug", "clear", "compact", "config", "context", "cost", "doctor", "exit", "export",
+    "fast", "feedback", "help", "hooks", "ide", "init", "login", "logout", "mcp", "memory", "model",
+    "output-style", "permissions", "plugin", "plugins", "pr-comments", "quit", "release-notes", "resume",
+    "review-pr", "rewind", "status", "statusline", "terminal-setup", "theme", "usage", "vim"}
 HANDOFF_NEXT = re.compile(r"-\s*Next:\s*`?([A-Za-z][\w:-]*)`?", re.I)
 NOISE_PREFIXES = ("<task-notification>", "<system-reminder>", "<local-command", "Caveat:", "<bash-",
                   "<command-message>", "[Request interrupted")
@@ -262,17 +270,29 @@ def parse_subagent(path, known_agents):
                         info["changed_code"] = True
                     if x.get("name") == "Bash" and TEST_CMD.search(str((x.get("input") or {}).get("command", ""))):
                         info["ran_tests"] = True
+                    if x.get("name") in HANDBACK_TOOLS:
+                        inp = x.get("input") or {}
+                        report = "\n".join(v for v in inp.values() if isinstance(v, str)) if isinstance(inp, dict) else str(inp)
+                        if report.strip():
+                            info["last_text"] = report
+                            info["via_handback"] = True
+                        continue
             t = text_of(c)
-            if t.strip():
+            if t.strip() and not info.get("via_handback"):
                 info["last_text"] = t
         elif d.get("type") == "user" and isinstance(c, list):
             info["tool_errors"] += sum(1 for x in blocks(c) if x.get("type") == "tool_result" and x.get("is_error"))
     lt = info.pop("last_text")
     info["has_handoff"] = bool(HANDOFF.search(lt))
-    st = HANDOFF_STATUS.search(lt)
+    m = HANDOFF.search(lt)
+    block = lt[m.end():] if m else ""  # only the Handoff block, not "Status:" lines in the report body
+    st = HANDOFF_STATUS.search(block)
     info["handoff_status"] = st.group(1).lower() if st else None
+    any_st = HANDOFF_STATUS_ANY.search(block) if info["has_handoff"] else None
+    info["handoff_status_invalid"] = redact(any_st.group(1)) if any_st and not st else None
+    info["via_handback"] = bool(info.get("via_handback"))
     nx = HANDOFF_NEXT.search(lt)
-    nxt = nx.group(1) if nx else None
+    nxt = redact(nx.group(1)) if nx else None
     info["handoff_next"] = nxt
     if nxt and known_agents:
         short = {k.split(":")[-1] for k in known_agents}
@@ -290,7 +310,8 @@ def parse_session(path, args, known_agents):
     rel = os.path.relpath(path, os.path.expanduser(args.root))
     sess = {"file": rel, "project": None, "branch": None, "start": None, "end": None, "prompts": [],
             "agents": Counter(), "skills": Counter(), "commands": Counter(), "tool_errors": 0,
-            "interrupts": 0, "changed_code": False, "ran_tests": False, "cost_usd": None, "subagents": []}
+            "interrupts": 0, "changed_code": False, "ran_tests": False, "cost_usd": None, "subagents": [],
+            "harness_commands": Counter()}
     turn = None
 
     def close_turn():
@@ -321,6 +342,9 @@ def parse_session(path, args, known_agents):
                     turn["interrupted"] = True
                 continue
             cmd = SLASH.search(raw[:400]) if raw.lstrip().startswith("<command-") else None
+            if cmd and cmd.group(1).lower() in BUILTIN_COMMANDS:
+                sess["harness_commands"][cmd.group(1).lower()] += 1
+                continue
             if not cmd and raw.lstrip().startswith(NOISE_PREFIXES):
                 continue
             close_turn()
@@ -368,6 +392,33 @@ def parse_session(path, args, known_agents):
         info["file"] = os.path.relpath(sp, os.path.expanduser(args.root))
         sess["subagents"].append(info)
     return sess
+
+
+def dedupe_forks(sessions):
+    """Forked/resumed sessions copy earlier turns into a new file: keep the first copy of each prompt and run."""
+    seen_prompts, seen_runs, removed = set(), set(), 0
+    for s in sessions:  # sorted oldest first, so the original session keeps its prompts
+        kept = []
+        for p in s["prompts"]:
+            key = (p["ts"] or p["ref"], hashlib.sha1(p["_norm"].encode("utf-8", "replace")).hexdigest())
+            if key in seen_prompts:
+                removed += 1
+                continue
+            seen_prompts.add(key)
+            kept.append(p)
+        s["forked_copies"] = len(s["prompts"]) - len(kept)
+        s["prompts"] = kept
+        runs = []
+        for x in s["subagents"]:
+            key = (x["agent"], str(x["start"]), x["tool_uses"]) if x["start"] else ("file", x["file"])
+            if key not in seen_runs:
+                seen_runs.add(key)
+                runs.append(x)
+        s["subagents"] = runs
+    sessions[:] = [s for s in sessions if s["prompts"] or s["subagents"]]
+    for s in sessions:
+        finalize_session(s)
+    return removed
 
 
 def finalize_session(s):
@@ -450,18 +501,20 @@ def analyse(sessions, defs, args):
     long_prompts = sorted((p for p in prompts if p["chars"] >= args.long_prompt and not p["command"]),
                           key=lambda p: -p["chars"])
     long_prompts = [{"ref": p["ref"], "chars": p["chars"], "category": p["category"],
-                     "used_squad": bool(p["agents"] or p["skills"]), "text": p["text"]} for p in long_prompts[:20]]
-    manual_handoffs = [{"ref": p["ref"], "chars": p["chars"], "text": p["text"]} for p in prompts if p["pasted_handoff"]][:20]
+                     "used_squad": bool(p["agents"] or p["skills"]), "text": p["text"]} for p in long_prompts]
+    manual_handoffs = [{"ref": p["ref"], "chars": p["chars"], "text": p["text"]} for p in prompts if p["pasted_handoff"]]
     large_pastes = [{"ref": p["ref"], "chars": p["chars"], "category": p["category"], "text": p["text"]}
-                    for p in prompts if p["large_paste"] and not p["pasted_handoff"]][:20]
+                    for p in prompts if p["large_paste"] and not p["pasted_handoff"]]
     interrupted = [{"ref": p["ref"], "agents": p["agents"], "command": p["command"], "text": p["text"]}
-                   for p in prompts if p["interrupted"]][:20]
+                   for p in prompts if p["interrupted"]]
+    totals = {"corrections": len(corrections), "long_prompts": len(long_prompts), "manual_handoffs": len(manual_handoffs),
+              "large_pastes": len(large_pastes), "interrupted_turns": len(interrupted)}
 
     subs = [x for s in sessions for x in s["subagents"]]
     in_progress = [x for x in subs if x["in_progress"]]
     subs = [x for x in subs if not x["in_progress"]]  # still running (e.g. this very audit): would skew health metrics
-    sub_stats = defaultdict(lambda: {"runs": 0, "unfinished": 0, "tool_errors": 0, "no_handoff": 0,
-                                     "blocked_or_input": 0, "invalid_next": [], "durations": []})
+    sub_stats = defaultdict(lambda: {"runs": 0, "unfinished": 0, "tool_errors": 0, "no_handoff": 0, "via_handback": 0,
+                                     "blocked_or_input": 0, "invalid_status": [], "invalid_next": [], "durations": []})
     for x in subs:
         st = sub_stats[x["agent"]]
         st["runs"] += 1
@@ -471,6 +524,9 @@ def analyse(sessions, defs, args):
             st["no_handoff"] += 1
         if x["handoff_status"] in ("blocked", "needs-input"):
             st["blocked_or_input"] += 1
+        st["via_handback"] += 1 if x["via_handback"] else 0
+        if x["handoff_status_invalid"]:
+            st["invalid_status"].append({"status": x["handoff_status_invalid"], "file": x["file"]})
         if x["handoff_next_valid"] is False:
             st["invalid_next"].append({"next": x["handoff_next"], "file": x["file"]})
         if x["duration_s"] is not None:
@@ -494,6 +550,25 @@ def analyse(sessions, defs, args):
         unique = frozenset(n for n, c in shorts.items() if c == 1)
         never[kind] = sorted(k for k in defs[kind] if not _used(k, kind, agent_use, cmd_use, skill_use, unique))
 
+    adoption = {}
+    shorts = Counter(k.split(":")[-1] for kind in ("agents", "commands", "skills") for k in set(defs[kind]))
+    bare_owner = {k.split(":")[-1]: k.split(":")[0] for kind in ("agents", "commands", "skills") for k in defs[kind]
+                  if ":" in k and shorts[k.split(":")[-1]] == 1}  # bare name -> plugin, only when unambiguous
+    for plugin in (args.scope or ["dev-squad"]):
+        def uses(p, plugin=plugin):
+            names = list(p["agents"]) + list(p["skills"]) + ([p["command"]] if p["command"] else [])
+            return any(n.startswith(plugin + ":") or (":" not in n and bare_owner.get(n) == plugin) for n in names)
+        first = min((p["ts"] for p in prompts if p["ts"] and uses(p)), default=None)
+        since_prompts = [p for p in prompts if first and p["ts"] and p["ts"] >= first]
+        since_sessions = [s for s in sessions if any(p["ts"] and first and p["ts"] >= first for p in s["prompts"])]
+        adoption[plugin] = {
+            "prompts_using": sum(1 for p in prompts if uses(p)), "prompts_total": len(prompts),
+            "first_use": first, "prompts_since_first_use": len(since_prompts),
+            "prompts_using_since_first_use": sum(1 for p in since_prompts if uses(p)),
+            "sessions_since_first_use": len(since_sessions),
+            "sessions_using_since_first_use": sum(1 for s in since_sessions if any(uses(p) for p in s["prompts"])),
+        }
+
     projects = Counter(s["project"] for s in sessions)
     return {
         "overview": {
@@ -503,7 +578,11 @@ def analyse(sessions, defs, args):
             "last": max((p["ts"] for p in prompts if p["ts"]), default=None),
             "projects": projects.most_common(), "cost_usd": round(sum(s["cost_usd"] or 0 for s in sessions), 2),
             "sessions_with_squad": sum(1 for s in sessions if any(p["agents"] or p["command"] or p["skills"] for p in s["prompts"])),
+            "fork_duplicate_prompts": getattr(args, "fork_duplicates", 0),
+            "forked_sessions": sum(1 for s in sessions if s.get("forked_copies")),
+            "harness_commands": sum((s["harness_commands"] for s in sessions), Counter()).most_common(),
         },
+        "adoption": adoption,
         "usage": {"agents": agent_use.most_common(), "commands": cmd_use.most_common(), "skills": skill_use.most_common()},
         "never_used": never,
         "definitions": {k: sorted(v) for k, v in defs.items()},
@@ -511,10 +590,11 @@ def analyse(sessions, defs, args):
                            for k, v in sorted(cats.items(), key=lambda kv: -kv[1]["count"])},
         "domains": {d: {"count": n, "examples": domain_examples[d]} for d, n in domains.most_common()},
         "signals": {
-            "repeated_instructions": repeated, "similar_prompts": similar, "long_prompts": long_prompts,
-            "corrections": corrections[:40], "corrections_by_actor": corrections_by_actor.most_common(),
-            "manual_handoffs": manual_handoffs, "large_pastes": large_pastes, "interrupted_turns": interrupted,
-            "skipped_steps": skipped[:40], "skipped_steps_total": len(skipped),
+            "repeated_instructions": repeated, "similar_prompts": similar, "long_prompts": long_prompts[:args.max_items],
+            "corrections": corrections[:args.max_items], "corrections_by_actor": corrections_by_actor.most_common(),
+            "manual_handoffs": manual_handoffs[:args.max_items], "large_pastes": large_pastes[:args.max_items],
+            "interrupted_turns": interrupted[:args.max_items], "totals": totals,
+            "skipped_steps": skipped[:args.max_items], "skipped_steps_total": len(skipped),
             "sessions_changed_code": sum(1 for s in sessions if s["changed_code"]),
         },
         "subagents": dict(sorted(sub_stats.items(), key=lambda kv: -kv[1]["runs"])),
@@ -535,13 +615,25 @@ def to_markdown(r, args):
     o = r["overview"]
     L = [f"# Squad usage evidence ({args.window_label})", "",
          f"- Sessions: **{o['sessions']}** ({o['sessions_with_squad']} used a squad agent/command/skill) · "
-         f"prompts: **{o['prompts']}** · sub-agent runs: **{o['subagent_runs']}** · cost of these sessions (whole-session totals): ${o['cost_usd']}",
+         f"prompts: **{o['prompts']}** · sub-agent runs: **{o['subagent_runs']}** · cost of these sessions (whole-session totals): ${o['cost_usd']}"
+         + (f" — upper bound: {o['forked_sessions']} forked session(s) also include the cost of copied turns" if o["forked_sessions"] else ""),
          f"- Period covered by data: {o['first']} → {o['last']}",
          ("- ⚠️ All sub-agent runs look in progress; health metrics are empty. "
           if o['subagent_runs'] == 0 and o['subagent_runs_in_progress'] else "")
          + f"- In-progress sub-agent runs excluded from health metrics: {o['subagent_runs_in_progress']}"
          + (f" · excluded projects: {', '.join(args.exclude_project)}" if args.exclude_project else ""),
-         "- Projects: " + ", ".join(f"`{p}` ({n})" for p, n in o["projects"][:10]), ""]
+         "- Projects: " + ", ".join(f"`{p}` ({n})" for p, n in o["projects"][:10]),
+         f"- Fork/resume duplicate prompts removed: {o['fork_duplicate_prompts']} · harness commands ignored: "
+         + (", ".join(f"/{c}×{n}" for c, n in o["harness_commands"]) or "none"), ""]
+    L += ["## Adoption (from the first use of each audited plugin)", "",
+          "| Plugin | Prompts using it | First use | Prompts since | Using since (%) | Sessions since | Sessions using (%) |",
+          "|---|---|---|---|---|---|---|"]
+    pct = lambda a, b: f"{a} ({100 * a / b:.0f}%)" if b else "0"
+    for plug, a in r["adoption"].items():
+        L.append(f"| {plug} | {pct(a['prompts_using'], a['prompts_total'])} | {a['first_use'] or 'never'} | "
+                 f"{a['prompts_since_first_use']} | {pct(a['prompts_using_since_first_use'], a['prompts_since_first_use'])} | "
+                 f"{a['sessions_since_first_use']} | {pct(a['sessions_using_since_first_use'], a['sessions_since_first_use'])} |")
+    L.append("")
 
     L += ["## Work inventory (heuristic classification of user prompts)", "",
           "| Work type | Prompts | With squad | Agents used | Commands | Example (source) |", "|---|---|---|---|---|---|"]
@@ -563,19 +655,22 @@ def to_markdown(r, args):
         L += ["", f"**Never used {kind}** ({len(nv)}/{len(r['definitions'][kind])}): " + (", ".join(f"`{x}`" for x in nv) or "none")]
 
     s = r["signals"]
-    L += ["", "## Sub-agent runs", "", "| Agent | Runs | Unfinished | Tool errors | No Handoff | Blocked/needs-input | Invalid Next | Median s |",
-          "|---|---|---|---|---|---|---|---|"]
+    L += ["", "## Sub-agent runs", "",
+          "| Agent | Runs | Unfinished | Tool errors | No Handoff | Via handback | Blocked/needs-input | Invalid Status | Invalid Next | Median s |",
+          "|---|---|---|---|---|---|---|---|---|---|"]
     for a, v in r["subagents"].items():
         inv = ", ".join(sorted({x["next"] for x in v["invalid_next"]})) or "—"
-        L.append(f"| {a} | {v['runs']} | {v['unfinished']} | {v['tool_errors']} | {v['no_handoff']} | "
-                 f"{v['blocked_or_input']} | {inv} | {v['median_duration_s']} |")
+        bad = ", ".join(sorted({x["status"] for x in v["invalid_status"]})) or "—"
+        L.append(f"| {a} | {v['runs']} | {v['unfinished']} | {v['tool_errors']} | {v['no_handoff']} | {v['via_handback']} | "
+                 f"{v['blocked_or_input']} | {bad} | {inv} | {v['median_duration_s']} |")
 
-    def section(title, items, fmt):
-        L.extend(["", f"## {title} ({len(items)})", ""])
+    def section(title, items, fmt, total=None):
+        shown = f"{len(items)}" if total is None or total == len(items) else f"showing {len(items)} of {total}"
+        L.extend(["", f"## {title} ({shown})", ""])
         L.extend(fmt(i) for i in items) if items else L.append("_none found_")
 
     section("Corrections right after an agent/command/main-thread turn", s["corrections"],
-            lambda i: f"- after **{i['after']}**: {i['text']} (`{i['ref']}`)")
+            lambda i: f"- after **{i['after']}**: {i['text']} (`{i['ref']}`)", s["totals"]["corrections"])
     L.append("") if s["corrections_by_actor"] else None
     if s["corrections_by_actor"]:
         L.append("By actor: " + ", ".join(f"{a} ×{n}" for a, n in s["corrections_by_actor"]))
@@ -584,16 +679,20 @@ def to_markdown(r, args):
     section("Similar prompt openings (≥%d)" % args.repeat, s["similar_prompts"],
             lambda i: f"- ×{i['count']}: " + " | ".join(f"{e['text'][:80]} (`{e['ref']}`)" for e in i["examples"]))
     section("Long from-scratch prompts (≥%d chars)" % args.long_prompt, s["long_prompts"],
-            lambda i: f"- {i['chars']} chars, {i['category']}, squad used: {i['used_squad']}: {i['text']} (`{i['ref']}`)")
+            lambda i: f"- {i['chars']} chars, {i['category']}, squad used: {i['used_squad']}: {i['text']} (`{i['ref']}`)",
+            s["totals"]["long_prompts"])
     section("Manual hand-offs (Handoff blocks pasted by the user)", s["manual_handoffs"],
-            lambda i: f"- {i['chars']} chars: {i['text']} (`{i['ref']}`)")
+            lambda i: f"- {i['chars']} chars: {i['text']} (`{i['ref']}`)", s["totals"]["manual_handoffs"])
     section("Large pastes (≥%d chars: specs, logs, outputs copied in by hand)" % args.large_paste, s["large_pastes"],
-            lambda i: f"- {i['chars']} chars, {i['category']}: {i['text']} (`{i['ref']}`)")
+            lambda i: f"- {i['chars']} chars, {i['category']}: {i['text']} (`{i['ref']}`)", s["totals"]["large_pastes"])
     section("Interrupted turns", s["interrupted_turns"],
-            lambda i: f"- agents={i['agents'] or '—'} command={i['command'] or '—'}: {i['text']} (`{i['ref']}`)")
+            lambda i: f"- agents={i['agents'] or '—'} command={i['command'] or '—'}: {i['text']} (`{i['ref']}`)",
+            s["totals"]["interrupted_turns"])
     L += ["", f"## Skipped steps: {s['skipped_steps_total']} of {s['sessions_changed_code']} sessions that changed code "
               "ran no tests and/or no review", ""]
     L += [f"- `{i['file']}` tests={i['ran_tests']} review={i['reviewed']}" for i in s["skipped_steps"][:15]]
+    if s["skipped_steps_total"] > 15:
+        L.append(f"- … showing 15 of {s['skipped_steps_total']} (full list in --json)")
     L += ["", "_All classifications are keyword heuristics: verify each item in its source before citing it._"]
     return "\n".join(L) + "\n"
 
@@ -646,6 +745,7 @@ def main():
     ap.add_argument("--repeat", type=int, default=3, help="occurrences that count as repeated (default 3)")
     ap.add_argument("--min-words", type=int, default=6, help="min words for a repeated-instruction sentence")
     ap.add_argument("--snippet", type=int, default=160, help="max snippet length (default 160)")
+    ap.add_argument("--max-items", type=int, default=40, help="max items per evidence list; totals are always reported")
     ap.add_argument("--intent-chars", type=int, default=300,
                     help="classify work type/domain from the first N chars of a prompt (default 300)")
     ap.add_argument("--large-paste", type=int, default=4000, help="chars that count as a large paste (default 4000)")
@@ -677,6 +777,7 @@ def main():
             skipped_old += 1
             continue
         s = parse_session(path, args, defs["agents"])
+        s["mtime"] = os.path.getmtime(path)
         where = (s["project"] or "", rel)
         if args.project and not any(p in w for p in args.project for w in where):
             continue
@@ -685,15 +786,18 @@ def main():
         s["prompts"] = [p for p in s["prompts"] if p["ts"] and since <= dt.datetime.fromisoformat(p["ts"]) < until]
         s["subagents"] = [x for x in s["subagents"] if x["start"] is None or since <= x["start"] < until]
         if not s["prompts"] and not s["subagents"]:
-            continue
-        finalize_session(s)
+            continue  # session flags are derived later by dedupe_forks -> finalize_session
         sessions.append(s)
-    sessions.sort(key=lambda s: s["start"] or dt.datetime.min.replace(tzinfo=dt.timezone.utc))
+    # oldest first; on equal start times the older file is the original and its fork comes later
+    sessions.sort(key=lambda s: (s["start"] or dt.datetime.min.replace(tzinfo=dt.timezone.utc), s["mtime"]))
+    args.fork_duplicates = dedupe_forks(sessions)
 
     report = analyse(sessions, defs, args)
     report["overview"]["window"] = args.window_label
     report["overview"]["files_outside_window"] = skipped_old
     for s in sessions:
+        s.pop("mtime", None)
+        s.pop("forked_copies", None)
         for p in s["prompts"]:
             p.pop("_norm", None)
 

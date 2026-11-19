@@ -1,6 +1,6 @@
 # Agents Squad Team 🧑‍💻🤖
 
-Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **16 agent chuyên biệt** (1 trưởng nhóm điều phối + 15 chuyên gia) và **12 lệnh workflow** giúp bạn đi trọn vòng đời phát triển phần mềm: phân tích yêu cầu → thiết kế → chia task → code → test → review → bảo mật → performance → migration DB → release → xử lý sự cố → nâng cấp dependency, kèm agent tự audit chính bộ squad.
+Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **16 agent chuyên biệt** (1 trưởng nhóm điều phối + 15 chuyên gia) và **14 lệnh workflow** giúp bạn đi trọn vòng đời phát triển phần mềm: phân tích yêu cầu → thiết kế → chia task → code → test → review → bảo mật → performance → migration DB → release → xử lý sự cố → nâng cấp dependency, kèm agent tự audit chính bộ squad.
 
 ## Đội hình
 
@@ -10,7 +10,7 @@ Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **16 agent chuy�
 | 🩵 `business-analyst` | BA | Làm rõ yêu cầu, user story, acceptance criteria (Given/When/Then) | Đọc + viết tài liệu |
 | 🟡 `project-manager` | PM / Scrum master | Chia task, ước lượng, dependency, `TASKS.md`, standup, rủi ro | Đọc + viết tài liệu + git read-only |
 | 🔵 `architect` | Kiến trúc sư | Thiết kế module/API/data model, ADR, so sánh công nghệ | Đọc + viết tài liệu thiết kế |
-| 🟢 `developer` | Senior full-stack dev | Implement feature, refactor, fix bug, viết unit test | Đọc/ghi code + chạy lệnh |
+| 🟢 `developer` | Senior full-stack dev | Implement feature, refactor, fix bug, viết unit test; lập checklist yêu cầu trước khi code và đánh dấu ✅/❌/⏭ kèm bằng chứng | Đọc/ghi code + chạy lệnh |
 | 🟠 `qa-engineer` | QA / test automation | Test plan, viết & chạy unit/integration/e2e test, báo cáo bug | Đọc/ghi test + chạy lệnh |
 | 🔴 `code-reviewer` | Reviewer | Review diff trước khi merge (correctness, performance, test…) | **Chỉ đọc** |
 | 🩷 `debugger` | Chuyên gia debug | Lỗi, stack trace, test fail, flaky, "chạy local được mà CI thì không" | Đọc/ghi code + chạy lệnh |
@@ -36,7 +36,9 @@ Mỗi agent đều:
 | `/dev-squad:squad <yêu cầu>` | Orchestrator tự phân tích, lập kế hoạch và giao việc cho agent phù hợp |
 | `/dev-squad:feature <mô tả>` | BA → Architect → PM → Developer → QA (lặp tới khi PASS) → Reviewer ∥ Security → Tech writer |
 | `/dev-squad:bugfix <lỗi>` | Debugger → (Developer) → QA regression test → Reviewer |
-| `/dev-squad:review [target]` | Code reviewer ∥ Security auditor chạy song song, gộp báo cáo |
+| `/dev-squad:review [URL MR/PR \| !iid \| branch \| range]` | Code reviewer ∥ Security auditor chạy song song, gộp báo cáo; nhận cả URL/số MR/PR; luôn ghi báo cáo gộp ra đường dẫn cố định (`.squad/reports/review-mr-<id>.md`); kết luận READY TO PUSH / NOT READY |
+| `/dev-squad:commit-msg [ngữ cảnh]` | Soạn commit message từ diff đã stage theo đúng style của repo; lấy ticket ID từ tên branch và **cảnh báo nếu ticket không khớp** (cả với các commit chưa push); chỉ commit khi bạn xác nhận |
+| `/dev-squad:brief [đối tượng]` | Tóm tắt cho quản lý (hiểu lập trình nhưng không đọc code) theo một format cố định ≤250 từ: tóm tắt, vấn đề, đã làm, kết quả có bằng chứng, rủi ro, cần quyết định, bước tiếp theo |
 | `/dev-squad:sprint-plan <mục tiêu>` | BA → (Architect) → PM, tạo board `.squad/TASKS.md` |
 | `/dev-squad:standup [khoảng thời gian]` | PM tổng hợp từ git log + task board |
 | `/dev-squad:ship [version]` | DevOps ∥ Security ∥ QA ∥ DB engineer (review migration) → Tech writer → kết luận GO / NO-GO |
@@ -196,12 +198,41 @@ Các agent trao đổi qua file để agent sau có đủ ngữ cảnh:
 ├── adr/0001-<quyet-dinh>.md         # architect
 ├── TASKS.md                         # project-manager (nguồn sự thật về task)
 ├── perf/<kịch-bản>/                 # performance-engineer: tool giả lập tải chạy lại được
+├── tmp/                             # developer: script và log tạm (tự gitignore)
+├── LESSONS.md                       # bài học chung: mọi agent đọc, agent có quyền ghi thì ghi thêm
 ├── incidents/<ngày>-<slug>/         # sre-incident-responder: timeline, postmortem
 ├── audit/<ngày>/                    # squad-auditor: squad-audit.md, drafts/, evidence/
 └── reports/<ngày>-<loại>-<slug>.md  # qa / review / security / debug / perf / upgrade
 ```
 
 Bạn có thể commit `.squad/` để lưu lịch sử planning cho cả team, hoặc thêm vào `.gitignore` nếu chỉ muốn dùng cá nhân.
+
+## Quy ước làm việc của squad
+
+- **Review gate trước mọi lần push hoặc MR** (push branch, push tag, mở hay cập nhật MR/PR):
+  1. Chạy `/dev-squad:review`.
+  2. Sửa hết lỗi *blocking* (🔴 từ `code-reviewer`, Critical/High từ `security-auditor`), hoặc bạn xác nhận hoãn từng lỗi.
+  3. `/review` luôn kết thúc bằng **READY TO PUSH** hoặc **NOT READY**. Chỉ push sau khi bạn xác nhận.
+
+  Luật được định nghĩa một chỗ trong skill `squad-playbook`, các lệnh workflow trỏ về đó. Mọi agent có quyền Bash đều có luật **không bao giờ tự push**; chỉ session chính push, sau khi bạn xác nhận.
+- **`developer`:**
+  - Lập **checklist yêu cầu** (R/C/V) trước khi code, và báo cáo từng mục ✅/❌/⏭ kèm bằng chứng.
+  - **Không bao giờ chờ bằng `sleep`, vòng lặp chờ hay Monitor.** Build và test chạy foreground với `timeout` rõ ràng (tối đa 10 phút); log ghi ra file, chỉ đọc phần lỗi. Lý do: kiểm thử thực tế cho thấy subagent không nhận được thông báo khi lệnh chạy nền kết thúc, nên phải chạy build lại hai lần.
+  - Chỉ lệnh có thể chạy quá 10 phút mới chạy nền, rồi bàn giao kèm lệnh, đường dẫn log và trạng thái "chưa kiểm chứng". Session chính (nhận được thông báo) vẫn được chạy nền.
+  - Script dài (>~15 dòng hoặc có quoting phức tạp) được ghi ra file trong `.squad/tmp/` rồi chạy theo đường dẫn.
+  - `.squad/tmp/` được tạo kèm `.gitignore` trước mọi thứ khác. Script tạm không chứa secret; log được coi là nhạy cảm; trước mọi lệnh build image (`docker build`, `buildx`, `compose build`, `podman`…) phải kiểm tra `.dockerignore` đã loại `.squad/`.
+
+- **Hợp đồng làm việc** (mọi agent và mọi lệnh):
+  - Không bịa đặt. Thiếu thông tin quyết định kết quả thì **hỏi** (tối đa 3 câu, `Status: needs-input`); giả định nhỏ thì ghi `ASSUMPTION:`.
+  - Handoff luôn có mục **`User actions`**, và tóm tắt cuối của mọi lệnh kết thúc bằng **"Việc bạn cần làm"**.
+  - `Status:` chỉ nhận `done | blocked | needs-input`; verdict để trong báo cáo.
+- **Bài học chung `.squad/LESSONS.md`:** mọi agent đọc trước khi làm, rồi ghi thêm root cause, quirk môi trường hay bẫy lặp lại. Mỗi bài học là một mục ngắn có bằng chứng, không chứa secret (định dạng xem trong skill `squad-playbook`).
+- **Phạm vi agent rõ hơn:**
+  - `code-reviewer` chỉ review diff.
+  - `qa-engineer` chỉ viết test tự động trong code; test thủ công hay qua trình duyệt trên môi trường lab thì chuyển cho squad test UI riêng.
+  - `orchestrator` chỉ chạy làm agent chính hoặc qua `/dev-squad:squad`.
+  - `performance-engineer` nhận cả yêu cầu "test performance thực tế / tăng tải tới khi timeout".
+  - `sre-incident-responder` nhận cả "pod restart / crash loop / OOMKilled" và **luôn ghi postmortem** vào `.squad/incidents/`.
 
 ## Tuỳ biến
 
@@ -220,7 +251,7 @@ agents-squad-team/
 └── plugins/dev-squad/
     ├── .claude-plugin/plugin.json      # manifest plugin
     ├── agents/                         # 16 agent
-    ├── commands/                       # 12 lệnh workflow
+    ├── commands/                       # 14 lệnh workflow
     └── skills/
         ├── squad-playbook/SKILL.md     # playbook điều phối
         ├── squad-audit/                # skill audit squad + scripts/mine_transcripts.py

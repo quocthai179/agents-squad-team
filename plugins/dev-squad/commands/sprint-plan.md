@@ -11,3 +11,5 @@ $ARGUMENTS
 2. If there are significant unknowns or technical decisions, launch `dev-squad:architect` to produce a lightweight design or spike list.
 3. Launch `dev-squad:project-manager` to build or update `.squad/TASKS.md`: tasks ≤ 1 day each, estimates, dependencies, owners (squad agents), milestones, risks. If the user gave a capacity, fit the Must items within it and list what does not fit.
 4. Present the plan to the user: sprint goal, committed scope, task table, critical path, risks, open questions. Do not start implementation until the user confirms.
+
+End your final summary with `User actions`: what the user must decide or do now, or "none" (see the `squad-playbook` skill).

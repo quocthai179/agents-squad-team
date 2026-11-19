@@ -13,4 +13,6 @@ $ARGUMENTS
 4. **Review** — launch `dev-squad:code-reviewer` on the diff. Address blocking findings.
 5. Summarise for the user: root cause (one paragraph), fix, files changed, test evidence, other places with the same pattern.
 
-Do not commit or push unless the user asks.
+Do not commit or push unless the user asks. Before any push or MR, apply the review gate from the `squad-playbook` skill: run `/dev-squad:review`, resolve or have the user defer every blocking finding, then push only after the user confirms.
+
+End your final summary with `User actions`: what the user must decide or do now, or "none" (see the `squad-playbook` skill).

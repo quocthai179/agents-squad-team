@@ -14,3 +14,5 @@ The brief must tell it to:
 - output **Yesterday / Today / Blockers / Progress** with task IDs and commit references.
 
 Show the report to the user as-is.
+
+End your final summary with `User actions`: what the user must decide or do now, or "none" (see the `squad-playbook` skill).

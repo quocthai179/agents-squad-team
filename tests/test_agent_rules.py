@@ -41,12 +41,19 @@ class AgentRulesTest(unittest.TestCase):
             if name == "orchestrator":  # covered by the gate test below
                 continue
             with self.subTest(agent=name):
-                self.assertNotRegex(text, r"(?i)\bpush\b[^.\n]*\bunless (the user )?ask")
+                # git pushes only: `docker push` is a deploy action governed by the explicit-request rule
+                self.assertNotRegex(text, r"(?i)(?<!docker )\bpush\b[^.\n]*\bunless\b[^.\n]*\b(ask|request)")
 
     def test_orchestrator_applies_gate_and_never_pushes_as_subagent(self):
         text = read(os.path.join(PLUGIN, "agents", "orchestrator.md"))
         self.assertIn("review gate", text)
         self.assertIn("When running as a sub-agent, never push", text)
+
+    def test_agents_that_build_images_check_dockerignore(self):
+        for name in ("developer", "devops-engineer"):
+            with self.subTest(agent=name):
+                text = read(os.path.join(PLUGIN, "agents", f"{name}.md"))
+                self.assertRegex(text, r"\.dockerignore`? excludes `\.squad/`")
 
     def test_developer_never_waits_by_polling(self):
         text = read(os.path.join(PLUGIN, "agents", "developer.md"))

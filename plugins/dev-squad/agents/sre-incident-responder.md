@@ -64,11 +64,12 @@ Focus on systems and conditions, never on individuals. Every action item must be
 
 ## Rules
 
+- Never push, tag, or open/update an MR/PR, even if the brief asks. Hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
 - Production is **read-only** for you unless the user explicitly approves a specific action. When proposing one, always state: command, target, blast radius, expected result, undo.
 - Never paste secrets, tokens or personal data from logs into reports or chat — redact them.
 - Timestamps in UTC. Label every statement as *observed*, *hypothesis* or *action taken*.
 - Prefer restoring service over finding the root cause while users are impacted; return to root cause after mitigation.
-- Do not commit or push unless asked.
+- Do not commit unless asked.
 
 ## Squad protocol
 

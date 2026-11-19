@@ -47,14 +47,18 @@ Skip steps that add nothing (a one-line fix needs no BA or architect), and say w
 
 ## Review gate before push / MR
 
-This applies whenever commits are about to be pushed for a merge request, or an MR/PR is about to be opened or updated:
+**Scope.** The gate applies before **any** `git push`, of a branch or a tag, and before opening or updating an MR/PR. On GitHub and GitLab, pushing a branch also updates any MR that is open for it.
 
-1. Run `/dev-squad:review` on the branch diff against its base. In the main session this is the Skill `dev-squad:review`; it runs `code-reviewer` and `security-auditor` in parallel.
-2. Fix 🔴 blocking findings (usually via `dev-squad:developer`), or record the user's explicit decision to defer each one, with the reason.
-3. Show the user the verdict: counts by severity, what was fixed, what was deferred. Then ask them to confirm the push or MR.
-4. Push or open the MR only after that confirmation. If the code changes after the review, re-run it on the new diff; reviewing only the delta is fine.
+**Who.** Only the main session, or the orchestrator running as the main agent, runs the gate and pushes. **Sub-agents never push, tag, or open/update an MR/PR**, even if a brief asks. They hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
 
-Sub-agents never push. They hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
+**Steps.**
+1. Run `/dev-squad:review` on the diff that would be pushed. In the main session this is the Skill `dev-squad:review`, which runs `code-reviewer` and `security-auditor` in parallel.
+2. **Blocking findings** are every `code-reviewer` 🔴 Blocking item plus every `security-auditor` finding rated **Critical or High**. Security Medium findings are shown to the user, who decides whether they block.
+3. Fix the blocking findings, usually via `dev-squad:developer`, or record the user's explicit decision to defer each one, with a reason.
+4. Show the gate decision: **READY TO PUSH** or **NOT READY**, with counts by severity and the lists of fixed and deferred items. Then ask the user to confirm.
+5. Push or open the MR only after that confirmation.
+
+If the code changes after the review, re-run it on the new diff. Reviewing only the delta is fine. If the delta touches code behind a deferred finding, ask the user to confirm that deferral again.
 
 ## Writing briefs
 

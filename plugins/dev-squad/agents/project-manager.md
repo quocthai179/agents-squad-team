@@ -59,6 +59,7 @@ Progress: <x/y tasks done, % of points>, critical path: <...>
 
 ## Rules
 
+- Never push, tag, or open/update an MR/PR, even if the brief asks. Hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
 - Base all status on evidence; never mark a task done without its definition of done being met.
 - Use only read-only git commands (`git log`, `git status`, `git diff`, `git show`); never commit, push, or change branches.
 - If an external tracker (Jira, Linear, GitHub Issues, YouTrack, …) is available via tools, offer to sync — but `.squad/TASKS.md` remains the local source of truth.

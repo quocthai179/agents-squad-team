@@ -16,4 +16,4 @@ $ARGUMENTS
 5. **Review** — in parallel: `dev-squad:code-reviewer` on the full diff and `dev-squad:database-engineer` reviewing the migrations against its migration-PR checklist.
 6. **Rollout notes** — `dev-squad:tech-writer` turns the plan into deploy notes: order of operations, commands humans run, what to monitor (locks, replica lag, errors), rollback, and the follow-up "contract" task, which `dev-squad:project-manager` adds to `.squad/TASKS.md`.
 
-Never run migrations against production or shared databases. Do not commit or push unless the user asks. If the user asks to push or open an MR, apply the **review gate** first: run `/dev-squad:review` on the branch diff, resolve or explicitly defer every 🔴 blocking finding, show the verdict, and push or open the MR only after the user confirms.
+Never run migrations against production or shared databases. Do not commit or push unless the user asks. Before any push or MR, apply the review gate from the `squad-playbook` skill: run `/dev-squad:review`, resolve or have the user defer every blocking finding, then push only after the user confirms.

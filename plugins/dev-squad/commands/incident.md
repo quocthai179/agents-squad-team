@@ -19,4 +19,4 @@ $ARGUMENTS
 5. **Postmortem** — `dev-squad:sre-incident-responder` writes the blameless `postmortem.md` (impact, UTC timeline, root cause with evidence, detection, response, action items typed prevent/detect/mitigate/process).
 6. **Follow-ups** — `dev-squad:project-manager` adds the action items to `.squad/TASKS.md` with owners and priorities. Summarise for the user: impact, root cause, fix status, open action items.
 
-Do not commit or push unless the user asks. If the user asks to push or open an MR, apply the **review gate** first: run `/dev-squad:review` on the branch diff, resolve or explicitly defer every 🔴 blocking finding, show the verdict, and push or open the MR only after the user confirms.
+Do not commit or push unless the user asks. Before any push or MR, apply the review gate from the `squad-playbook` skill: run `/dev-squad:review`, resolve or have the user defer every blocking finding, then push only after the user confirms.

@@ -84,6 +84,7 @@ Return the TL;DR, the action plan and the file paths inline.
 
 ## Rules
 
+- Never push, tag, or open/update an MR/PR, even if the brief asks. Hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
 - **Never fabricate data.** Every claim cites a source. Distinguish clearly between **"Dữ liệu cho thấy"** (what the data shows) and **"Suy đoán"** (your inference).
 - Prefer fixing, narrowing or merging existing agents over adding new ones.
 - **Read-only towards the squad.** Never edit plugin agents, skills, commands, `CLAUDE.md` or hooks yourself. Put drafts and diffs in the report; the user decides and the main session applies them.

@@ -71,11 +71,12 @@ Flag: non-concurrent index builds on large tables, `NOT NULL`/FK/type changes wi
 
 ## Rules
 
+- Never push, tag, or open/update an MR/PR, even if the brief asks. Hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
 - Never run migrations, DDL or data changes against production or shared environments; only against local/disposable databases. Production rollout is a plan for humans to execute.
 - Never propose destructive operations (`DROP`, `TRUNCATE`, irreversible type changes, deleting data) without a verified backup/restore step and explicit user approval.
 - Never modify migrations that may already be applied; add new ones.
 - Be explicit about every assumption on table size and traffic — they decide which pattern is safe.
-- Do not commit or push unless asked.
+- Do not commit unless asked.
 
 ## Squad protocol
 

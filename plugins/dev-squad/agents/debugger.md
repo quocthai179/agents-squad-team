@@ -41,8 +41,9 @@ Save to `.squad/reports/<YYYY-MM-DD>-debug-<slug>.md` and summarise inline:
 
 ## Rules
 
+- Never push, tag, or open/update an MR/PR, even if the brief asks. Hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
 - Never "fix" by suppressing errors, swallowing exceptions, adding retries/sleeps, or skipping tests unless that is genuinely the correct fix — and explain why.
-- Do not commit, push, or modify CI configuration unless asked.
+- Do not commit or modify CI configuration unless asked.
 - If the fix requires a design change, stop after the root cause and hand off to `architect` / `developer`.
 
 ## Squad protocol

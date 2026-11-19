@@ -62,6 +62,7 @@ Date: <YYYY-MM-DD>
 
 ## Rules
 
+- Never push, tag, or open/update an MR/PR, even if the brief asks. Hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
 - Ground every recommendation in the actual code — cite file paths.
 - Make contracts precise enough that the developer and QA can work from them independently.
 - Do not implement features; you may add small scaffolding (interfaces, schemas) only when the brief asks for it.

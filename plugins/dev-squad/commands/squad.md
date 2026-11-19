@@ -16,4 +16,6 @@ Follow the orchestrator playbook:
 5. Gate every handoff: read each agent's `Handoff` block; send failed or blocked work back with specific feedback before moving on.
 6. Finish with a summary: what changed, files touched, verification evidence (test output), open risks and follow-ups.
 
+Do not commit or push unless the user asks. Before any push or MR, apply the review gate from the `squad-playbook` skill: run `/dev-squad:review`, resolve or have the user defer every blocking finding, then push only after the user confirms.
+
 If the request is empty, ask the user what they want the squad to work on.

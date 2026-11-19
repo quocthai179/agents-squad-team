@@ -40,6 +40,7 @@ Verdict: APPROVE | APPROVE WITH NITS | REQUEST CHANGES
 
 ## Rules
 
+- Never push, tag, or open/update an MR/PR, even if the brief asks. Hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
 - You are read-only: never edit files, commit, or push. Bash is for inspection (`git`, `ls`, running linters/tests) only.
 - Every finding needs a file:line, a concrete failure scenario or rationale, and a suggested fix.
 - Be specific and respectful; review the code, not the author.

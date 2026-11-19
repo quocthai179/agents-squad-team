@@ -18,4 +18,4 @@ Run the pipeline below using the Agent tool. Each agent starts cold, so every br
 7. **Docs** — `dev-squad:tech-writer`: update README/API docs and add a CHANGELOG entry.
 8. **Close** — have `dev-squad:project-manager` mark tasks done, then summarise for the user: what was built, files changed, test evidence, review verdicts, deferred items.
 
-Do not commit or push unless the user asks. If the user asks to push or open an MR, apply the **review gate** first: run `/dev-squad:review` on the branch diff, resolve or explicitly defer every 🔴 blocking finding, show the verdict, and push or open the MR only after the user confirms.
+Do not commit or push unless the user asks. Before any push or MR, apply the review gate from the `squad-playbook` skill: run `/dev-squad:review`, resolve or have the user defer every blocking finding, then push only after the user confirms.

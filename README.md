@@ -206,16 +206,18 @@ Bạn có thể commit `.squad/` để lưu lịch sử planning cho cả team, 
 
 ## Quy ước làm việc của squad
 
-- **Review gate trước khi push/MR.** Trước khi push commit cho một merge request, hoặc trước khi mở hay cập nhật MR/PR:
-  1. Chạy `/dev-squad:review` trên diff của branch.
-  2. Sửa hết lỗi 🔴, hoặc bạn xác nhận hoãn từng lỗi.
-  3. Xem verdict rồi mới xác nhận push.
+- **Review gate trước mọi lần push hoặc MR** (push branch, push tag, mở hay cập nhật MR/PR):
+  1. Chạy `/dev-squad:review`.
+  2. Sửa hết lỗi *blocking* (🔴 từ `code-reviewer`, Critical/High từ `security-auditor`), hoặc bạn xác nhận hoãn từng lỗi.
+  3. `/review` luôn kết thúc bằng **READY TO PUSH** hoặc **NOT READY**. Chỉ push sau khi bạn xác nhận.
 
-  Luật này có trong playbook, orchestrator, lệnh `/review` (kết luận READY TO PUSH / NOT READY) và mọi lệnh workflow. Subagent không bao giờ tự push.
+  Luật được định nghĩa một chỗ trong skill `squad-playbook`, các lệnh workflow trỏ về đó. Mọi agent có quyền Bash đều có luật **không bao giờ tự push**; chỉ session chính push, sau khi bạn xác nhận.
 - **`developer`:**
   - Lập **checklist yêu cầu** (R/C/V) trước khi code, và báo cáo từng mục ✅/❌/⏭ kèm bằng chứng.
-  - Build hoặc test dài (>~2 phút) chạy **ở chế độ nền** (`run_in_background`), không dùng `sleep`, vòng lặp chờ hay Monitor; log đầy đủ ghi ra file.
-  - Script dài (>~15 dòng hoặc có quoting phức tạp) được **ghi ra file** trong `.squad/tmp/` rồi chạy theo đường dẫn. Thư mục này tự được gitignore.
+  - **Không bao giờ chờ bằng `sleep`, vòng lặp chờ hay Monitor.** Build và test chạy foreground với `timeout` rõ ràng (tối đa 10 phút); log ghi ra file, chỉ đọc phần lỗi. Lý do: kiểm thử thực tế cho thấy subagent không nhận được thông báo khi lệnh chạy nền kết thúc, nên phải chạy build lại hai lần.
+  - Chỉ lệnh có thể chạy quá 10 phút mới chạy nền, rồi bàn giao kèm lệnh, đường dẫn log và trạng thái "chưa kiểm chứng". Session chính (nhận được thông báo) vẫn được chạy nền.
+  - Script dài (>~15 dòng hoặc có quoting phức tạp) được ghi ra file trong `.squad/tmp/` rồi chạy theo đường dẫn.
+  - `.squad/tmp/` được tạo kèm `.gitignore` trước mọi thứ khác. Script tạm không chứa secret; log được coi là nhạy cảm; trước khi `docker build` phải kiểm tra `.dockerignore` đã loại `.squad/`.
 
 ## Tuỳ biến
 

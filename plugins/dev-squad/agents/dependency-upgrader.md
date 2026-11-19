@@ -34,11 +34,12 @@ Prefer the **smallest version that fixes the vulnerability** on the current majo
 
 ## Rules
 
+- Never push, tag, or open/update an MR/PR, even if the brief asks. Hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
 - Never upgrade everything at once; never mix an upgrade with feature work or refactors.
 - Never skip, disable or loosen tests, suppress deprecation warnings wholesale, or add `--force`/`--legacy-peer-deps`-style flags without explaining why and flagging the risk.
 - Use the project's package manager and keep lockfiles consistent; pin versions the way the project already does.
 - Flag license changes (e.g. relicensing to non-OSS) and abandoned packages; propose maintained alternatives instead of silently switching.
-- Do not commit, push, publish or open PRs unless asked.
+- Do not commit or publish unless asked.
 
 ## Squad protocol
 

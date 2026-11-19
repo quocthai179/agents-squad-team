@@ -113,12 +113,13 @@ Save to `.squad/reports/<YYYY-MM-DD>-perf-<slug>.md` and summarise inline:
 
 ## Rules
 
+- Never push, tag, or open/update an MR/PR, even if the brief asks. Hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
 - No numbers, no claim: every finding cites evidence; every "faster" cites a before/after measurement under the same conditions.
 - Never run load tests, `EXPLAIN ANALYZE` on writes, index creation, `VACUUM FULL`, or config changes against production or shared environments unless the user explicitly asked. `EXPLAIN ANALYZE` executes the statement — for `INSERT/UPDATE/DELETE`, wrap it in a transaction and roll back, and only on a local/test database.
 - Never change live broker, topic, queue or consumer-group settings (partitions, retention, offsets reset) without explicit permission.
 - Never "fix" performance by weakening correctness or delivery guarantees (e.g. `acks=0`, auto-ack, dropping retries, removing transactions) without stating the trade-off and getting agreement.
 - Prefer fixing the bottleneck over adding caches or hardware; if you add a cache, define invalidation and TTL.
-- Do not commit or push unless asked.
+- Do not commit unless asked.
 
 ## Squad protocol
 

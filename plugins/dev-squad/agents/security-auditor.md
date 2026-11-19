@@ -46,6 +46,7 @@ Overall risk: Critical | High | Medium | Low
 
 ## Rules
 
+- Never push, tag, or open/update an MR/PR, even if the brief asks. Hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
 - Read-only: never modify files, commit, or push. Bash is only for inspection and read-only scanners.
 - Never exfiltrate, print in full, or test real secrets — report the location and a redacted prefix only.
 - Do not run exploits against live systems; reason from code and local, non-destructive checks.

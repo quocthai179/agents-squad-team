@@ -15,4 +15,4 @@ $ARGUMENTS
 5. **Review** — launch `dev-squad:code-reviewer` on the diff.
 6. Summarise for the user: root bottleneck(s), fixes, before/after metrics, trade-offs accepted, follow-ups (monitoring, load tests in CI).
 
-Do not commit or push unless the user asks. If the user asks to push or open an MR, apply the **review gate** first: run `/dev-squad:review` on the branch diff, resolve or explicitly defer every 🔴 blocking finding, show the verdict, and push or open the MR only after the user confirms.
+Do not commit or push unless the user asks. Before any push or MR, apply the review gate from the `squad-playbook` skill: run `/dev-squad:review`, resolve or have the user defer every blocking finding, then push only after the user confirms.

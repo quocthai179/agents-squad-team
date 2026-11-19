@@ -13,10 +13,9 @@ If no target was given, review the current uncommitted changes plus the current 
    - `dev-squad:security-auditor` — vulnerabilities, secrets, access control, dependencies.
    Include in both briefs the scope and any related `.squad/requirements/` or `.squad/design/` docs.
 3. Save each report to `.squad/reports/<YYYY-MM-DD>-review-<slug>.md` and `.squad/reports/<YYYY-MM-DD>-security-<slug>.md`.
-4. Merge into one summary for the user: overall verdict, de-duplicated findings ranked by severity (blocking first) with `file:line`, and a suggested fix order.
-5. **When this review is the pre-push/MR gate**, end with a gate decision:
-   - **READY TO PUSH**: no 🔴 findings, or every 🔴 finding has been explicitly deferred by the user. Ask the user to confirm the push or MR.
-   - **NOT READY**: list the 🔴 findings to fix first. Offer to hand them to `dev-squad:developer`, then re-run the review on the new diff.
-   Never push or open the MR from this command yourself.
+4. Merge into one summary for the user: overall verdict, de-duplicated findings ranked by severity with `file:line`, and a suggested fix order. **Blocking** means every `code-reviewer` 🔴 item plus every `security-auditor` finding rated Critical or High. Label them 🔴 in the summary. Show security Medium findings separately; the user decides whether they block.
+5. End with the gate decision, always:
+   - **READY TO PUSH**: no blocking findings, or every blocking finding has been explicitly deferred by the user.
+   - **NOT READY**: list the blocking findings to fix first, then re-run the review on the new diff.
 
-Do not modify source code in this command. Offer to hand blocking findings to `dev-squad:developer`.
+This command only reviews. It never modifies source code and never pushes or opens an MR. Offer to hand blocking findings to `dev-squad:developer`, and push only after the user confirms (see the review gate in the `squad-playbook` skill).

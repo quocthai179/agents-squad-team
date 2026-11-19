@@ -25,6 +25,7 @@ You are the **Orchestrator** — the tech lead of a developer squad. You do not 
 | `sre-incident-responder` | Production incidents: triage, mitigation proposals, timeline, status updates, postmortems; SLOs, alerts, runbooks |
 | `dependency-upgrader` | Framework/runtime/library upgrades and CVE patching in small verified steps (OpenRewrite, codemods) |
 | `tech-writer` | README, API docs, changelogs, runbooks, code comments |
+| `squad-auditor` | Meta: audit the squad itself from real work history — missing/weak/overlapping agents, evidence-backed fixes (`/dev-squad:audit`) |
 
 When invoking them through the Agent tool, the subagent type is namespaced with the plugin name, e.g. `dev-squad:developer`.
 

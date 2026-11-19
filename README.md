@@ -1,6 +1,6 @@
 # Agents Squad Team 🧑‍💻🤖
 
-Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **15 agent chuyên biệt** (1 trưởng nhóm điều phối + 14 chuyên gia) và **11 lệnh workflow** giúp bạn đi trọn vòng đời phát triển phần mềm: phân tích yêu cầu → thiết kế → chia task → code → test → review → bảo mật → performance → migration DB → release → xử lý sự cố → nâng cấp dependency.
+Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **16 agent chuyên biệt** (1 trưởng nhóm điều phối + 15 chuyên gia) và **12 lệnh workflow** giúp bạn đi trọn vòng đời phát triển phần mềm: phân tích yêu cầu → thiết kế → chia task → code → test → review → bảo mật → performance → migration DB → release → xử lý sự cố → nâng cấp dependency, kèm agent tự audit chính bộ squad.
 
 ## Đội hình
 
@@ -21,6 +21,7 @@ Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **15 agent chuy�
 | 🔴 `sre-incident-responder` | SRE / xử lý sự cố | Production sập hoặc chậm: đánh giá mức độ, tìm thay đổi gây lỗi, đề xuất cách giảm thiểu, timeline, status update, postmortem; SLO, alert, runbook | Production chỉ đọc; mọi thay đổi phải được bạn duyệt |
 | 🟠 `dependency-upgrader` | Nâng cấp dependency | Spring Boot 2→3, Java 17→21, Node, Python, React…; vá CVE; đọc migration guide, OpenRewrite/codemod, nâng từng bước có test | Đọc/ghi code + chạy lệnh |
 | 🔵 `tech-writer` | Technical writer | README, API docs, CHANGELOG, runbook, hướng dẫn | Đọc/ghi tài liệu |
+| 🩵 `squad-auditor` | Squad Auditor (EM + AI-workflow coach) | Audit chính bộ squad (dev-squad, lab) từ lịch sử làm việc thật: thiếu agent nào, agent nào yếu/thừa/chồng chéo, việc cần làm | Chỉ ghi vào `.squad/audit/`; không tự sửa squad |
 
 Mỗi agent đều:
 - tự đọc codebase và tuân theo convention có sẵn của dự án,
@@ -42,6 +43,7 @@ Mỗi agent đều:
 | `/dev-squad:db-change <thay đổi>` | DB engineer lập kế hoạch migration không downtime → bạn duyệt → DB engineer ∥ Developer → QA chạy migrate up/down → Reviewer ∥ DB engineer → ghi chú rollout |
 | `/dev-squad:incident <sự cố>` | SRE đánh giá & đề xuất giảm thiểu → bạn duyệt → tìm nguyên nhân gốc (Debugger / Perf / DB / DevOps) → fix → postmortem → PM tạo action items |
 | `/dev-squad:upgrade <mục tiêu>` | Upgrader kiểm kê & lập kế hoạch → bạn duyệt → nâng từng bước có test → QA ∥ Security ∥ Perf → Reviewer → CHANGELOG |
+| `/dev-squad:audit [dev-squad\|lab\|both] [khoảng thời gian]` | Hỏi tối đa 3 câu → Squad Auditor đọc transcript, `.squad/`, `research/`, git, định nghĩa agent → báo cáo có dẫn nguồn + bản nháp agent mới → bạn chọn cái cần áp dụng |
 | `/dev-squad:perf <vấn đề>` | Performance engineer đo baseline & tìm bottleneck → Developer fix → QA ∥ đo lại trước/sau → Reviewer |
 
 Ngoài ra skill `squad-playbook` giúp Claude tự biết nên gọi agent nào khi bạn nói kiểu *"dùng squad làm…"*.
@@ -86,6 +88,35 @@ Kết quả kiểm thử thật trên PostgreSQL 16 (bảng 600k dòng, pool 10,
 | baseline 5 q/s | 23 ms | 4.1 ms |
 | spike 600 q/s | 15 710 ms, 835 request bị drop | 1.2 ms, 0 drop |
 | recovery 5 q/s | 15 317 ms (chưa hồi phục) | 5.2 ms |
+
+## Agent `squad-auditor` — tự audit bộ squad
+
+Agent này đóng vai engineering manager kiêm AI-workflow coach, audit chính bộ squad (dev-squad, lab) dựa trên **lịch sử làm việc thật**, không dựa trên cảm tính:
+
+1. **Thu thập bằng chứng** theo thứ tự, ghi rõ nguồn nào đọc được và nguồn nào "không có dữ liệu":
+   - transcript Claude Code (`~/.claude/projects/**/*.jsonl`, gồm cả transcript của subagent),
+   - `.squad/` và `research/` (TASKS, reports, incidents, LESSONS, squad-issues, retro),
+   - git log,
+   - định nghĩa agent, skill và command đang có.
+2. **Lập danh mục công việc** (work inventory), rồi tìm tín hiệu thiếu agent:
+   - việc lặp lại ≥3 lần mà làm tay,
+   - prompt dài viết lại từ đầu,
+   - bị sửa output ngay sau khi agent chạy,
+   - chỉ dẫn lặp lại qua nhiều session,
+   - handoff phải copy-paste tay,
+   - agent không bao giờ được gọi,
+   - bước hay bị bỏ (test, review),
+   - domain riêng như SNMP/MIB, Quarkus, OVNG.
+3. **Đánh giá từng agent** (giữ / sửa prompt / sửa description / gộp / bỏ) và **đề xuất tối đa 5 agent mới**, mỗi agent phải có ≥2 ví dụ thật, kèm bản nháp file. Sau đó agent **tự phản biện** để loại các đề xuất làm squad phình to không cần thiết.
+4. **Báo cáo** tại `.squad/audit/<ngày>/squad-audit.md`: TL;DR, kế hoạch hành động (quick win, tuần này, tháng này) và metric để đo lại sau 2–4 tuần.
+
+Agent dùng skill `squad-audit`, trong đó có script `mine_transcripts.py`. Script chỉ dùng thư viện chuẩn và chạy local, tự che secret và email, và mọi phát hiện đều kèm nguồn `file:dòng`. Lệnh `--show=<ref>` cho xem ngữ cảnh để kiểm chứng trước khi trích dẫn.
+
+```bash
+python plugins/dev-squad/skills/squad-audit/scripts/mine_transcripts.py --days 30 --scope dev-squad --scope lab --md usage.md
+```
+
+> Agent chỉ đề xuất, không tự sửa agent/skill/command. Thư mục `evidence/` chứa trích đoạn hội thoại (đã che secret), nên thêm `.squad/audit/*/evidence/` vào `.gitignore`. Chat trên claude.ai không nằm trên máy nên được ghi là "không có dữ liệu", trừ khi bạn export ra.
 
 ## Cài đặt
 
@@ -166,6 +197,7 @@ Các agent trao đổi qua file để agent sau có đủ ngữ cảnh:
 ├── TASKS.md                         # project-manager (nguồn sự thật về task)
 ├── perf/<kịch-bản>/                 # performance-engineer: tool giả lập tải chạy lại được
 ├── incidents/<ngày>-<slug>/         # sre-incident-responder: timeline, postmortem
+├── audit/<ngày>/                    # squad-auditor: squad-audit.md, drafts/, evidence/
 └── reports/<ngày>-<loại>-<slug>.md  # qa / review / security / debug / perf / upgrade
 ```
 
@@ -184,13 +216,14 @@ Bạn có thể commit `.squad/` để lưu lịch sử planning cho cả team, 
 agents-squad-team/
 ├── .claude-plugin/marketplace.json     # khai báo marketplace
 ├── .github/workflows/validate.yml      # CI: validate plugin + unit test
-├── tests/test_load_simulation.py       # unit test cho engine giả lập tải
+├── tests/                             # unit test: engine giả lập tải + miner transcript
 └── plugins/dev-squad/
     ├── .claude-plugin/plugin.json      # manifest plugin
-    ├── agents/                         # 15 agent
-    ├── commands/                       # 11 lệnh workflow
+    ├── agents/                         # 16 agent
+    ├── commands/                       # 12 lệnh workflow
     └── skills/
         ├── squad-playbook/SKILL.md     # playbook điều phối
+        ├── squad-audit/                # skill audit squad + scripts/mine_transcripts.py
         └── load-simulation/            # skill giả lập tải đột biến
             ├── SKILL.md
             ├── references/scenarios.md # 18 kịch bản sự cố + cách tái hiện

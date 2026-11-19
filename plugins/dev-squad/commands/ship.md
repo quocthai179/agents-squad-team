@@ -15,4 +15,4 @@ If no version was given, treat it as the next release.
 2. Then launch `dev-squad:tech-writer` to draft CHANGELOG / release notes for `<last tag>..HEAD`, breaking changes first.
 3. Report a **GO / NO-GO** to the user with: checklist results, blocking issues (with owners), test results, security findings, and the draft release notes.
 
-Never tag, push, publish or deploy unless the user explicitly asks.
+Never tag, push, publish or deploy unless the user explicitly asks. If the release goes through an MR, apply the review gate first: run `/dev-squad:review` on the release diff, resolve or explicitly defer every 🔴 finding, show the verdict, and wait for the user's confirmation.

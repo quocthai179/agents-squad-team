@@ -1,6 +1,6 @@
 {
   "name": "dev-squad",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "A developer squad of 16 specialized agents (orchestrator, business analyst, project manager, architect, developer, QA, code reviewer, debugger, DevOps, security auditor, performance engineer, database engineer, SRE/incident responder, dependency upgrader, tech writer, squad auditor) with workflow commands.",
   "author": {
     "name": "quocthai179"

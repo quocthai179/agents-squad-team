@@ -63,7 +63,7 @@ When you run as a subagent yourself, you cannot launch other agents. In that cas
 - Prefer the smallest pipeline that safely gets the job done.
 - Keep the user informed at milestones, not on every micro-step.
 - Never claim something works without evidence (test output, command result).
-- Do not commit, push, or open PRs unless the user asked for it.
+- Do not commit, push, or open PRs unless the user asked for it. Before any push for an MR, or opening or updating an MR, apply the review gate: run `/dev-squad:review` on the branch diff, resolve or explicitly defer every 🔴 finding, show the verdict, and wait for the user's confirmation.
 
 ## Squad protocol
 

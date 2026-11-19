@@ -10,7 +10,7 @@ Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **16 agent chuy�
 | 🩵 `business-analyst` | BA | Làm rõ yêu cầu, user story, acceptance criteria (Given/When/Then) | Đọc + viết tài liệu |
 | 🟡 `project-manager` | PM / Scrum master | Chia task, ước lượng, dependency, `TASKS.md`, standup, rủi ro | Đọc + viết tài liệu + git read-only |
 | 🔵 `architect` | Kiến trúc sư | Thiết kế module/API/data model, ADR, so sánh công nghệ | Đọc + viết tài liệu thiết kế |
-| 🟢 `developer` | Senior full-stack dev | Implement feature, refactor, fix bug, viết unit test | Đọc/ghi code + chạy lệnh |
+| 🟢 `developer` | Senior full-stack dev | Implement feature, refactor, fix bug, viết unit test; lập checklist yêu cầu trước khi code và đánh dấu ✅/❌/⏭ kèm bằng chứng | Đọc/ghi code + chạy lệnh |
 | 🟠 `qa-engineer` | QA / test automation | Test plan, viết & chạy unit/integration/e2e test, báo cáo bug | Đọc/ghi test + chạy lệnh |
 | 🔴 `code-reviewer` | Reviewer | Review diff trước khi merge (correctness, performance, test…) | **Chỉ đọc** |
 | 🩷 `debugger` | Chuyên gia debug | Lỗi, stack trace, test fail, flaky, "chạy local được mà CI thì không" | Đọc/ghi code + chạy lệnh |
@@ -196,12 +196,26 @@ Các agent trao đổi qua file để agent sau có đủ ngữ cảnh:
 ├── adr/0001-<quyet-dinh>.md         # architect
 ├── TASKS.md                         # project-manager (nguồn sự thật về task)
 ├── perf/<kịch-bản>/                 # performance-engineer: tool giả lập tải chạy lại được
+├── tmp/                             # developer: script và log tạm (tự gitignore)
 ├── incidents/<ngày>-<slug>/         # sre-incident-responder: timeline, postmortem
 ├── audit/<ngày>/                    # squad-auditor: squad-audit.md, drafts/, evidence/
 └── reports/<ngày>-<loại>-<slug>.md  # qa / review / security / debug / perf / upgrade
 ```
 
 Bạn có thể commit `.squad/` để lưu lịch sử planning cho cả team, hoặc thêm vào `.gitignore` nếu chỉ muốn dùng cá nhân.
+
+## Quy ước làm việc của squad
+
+- **Review gate trước khi push/MR.** Trước khi push commit cho một merge request, hoặc trước khi mở hay cập nhật MR/PR:
+  1. Chạy `/dev-squad:review` trên diff của branch.
+  2. Sửa hết lỗi 🔴, hoặc bạn xác nhận hoãn từng lỗi.
+  3. Xem verdict rồi mới xác nhận push.
+
+  Luật này có trong playbook, orchestrator, lệnh `/review` (kết luận READY TO PUSH / NOT READY) và mọi lệnh workflow. Subagent không bao giờ tự push.
+- **`developer`:**
+  - Lập **checklist yêu cầu** (R/C/V) trước khi code, và báo cáo từng mục ✅/❌/⏭ kèm bằng chứng.
+  - Build hoặc test dài (>~2 phút) chạy **ở chế độ nền** (`run_in_background`), không dùng `sleep`, vòng lặp chờ hay Monitor; log đầy đủ ghi ra file.
+  - Script dài (>~15 dòng hoặc có quoting phức tạp) được **ghi ra file** trong `.squad/tmp/` rồi chạy theo đường dẫn. Thư mục này tự được gitignore.
 
 ## Tuỳ biến
 

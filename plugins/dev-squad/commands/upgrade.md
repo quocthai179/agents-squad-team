@@ -17,4 +17,4 @@ $ARGUMENTS
 5. **Review** — `dev-squad:code-reviewer` reviews the diff, step by step.
 6. **Document** — `dev-squad:tech-writer` adds a CHANGELOG entry and notes for developers (new minimum runtime, changed config properties, changed defaults).
 
-Do not commit, push or publish unless the user asks.
+Do not commit, push or publish unless the user asks. If the user asks to push or open an MR, apply the **review gate** first: run `/dev-squad:review` on the branch diff, resolve or explicitly defer every 🔴 blocking finding, show the verdict, and push or open the MR only after the user confirms.

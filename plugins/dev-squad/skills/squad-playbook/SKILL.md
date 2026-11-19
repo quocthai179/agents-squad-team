@@ -45,6 +45,17 @@ Subagents cannot launch other subagents. Orchestration (the pipelines below) the
 
 Skip steps that add nothing (a one-line fix needs no BA or architect), and say which steps were skipped.
 
+## Review gate before push / MR
+
+This applies whenever commits are about to be pushed for a merge request, or an MR/PR is about to be opened or updated:
+
+1. Run `/dev-squad:review` on the branch diff against its base. In the main session this is the Skill `dev-squad:review`; it runs `code-reviewer` and `security-auditor` in parallel.
+2. Fix 🔴 blocking findings (usually via `dev-squad:developer`), or record the user's explicit decision to defer each one, with the reason.
+3. Show the user the verdict: counts by severity, what was fixed, what was deferred. Then ask them to confirm the push or MR.
+4. Push or open the MR only after that confirmation. If the code changes after the review, re-run it on the new diff; reviewing only the delta is fine.
+
+Sub-agents never push. They hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
+
 ## Writing briefs
 
 Agents start with no memory of the conversation. Every brief should contain:
@@ -64,6 +75,7 @@ Agents start with no memory of the conversation. Every brief should contain:
 ├── adr/NNNN-<decision>.md      # architect
 ├── TASKS.md                    # project-manager (single source of truth)
 ├── perf/<scenario>/            # performance-engineer: runnable load-simulation tools
+├── tmp/                        # developer: scratch scripts and build logs (self-ignored via tmp/.gitignore)
 ├── incidents/<date>-<slug>/    # sre-incident-responder: timeline.md, postmortem.md
 ├── audit/<date>/               # squad-auditor: squad-audit.md, drafts/, evidence/ (keep evidence out of git)
 └── reports/<date>-<type>-<slug>.md   # qa, review, security, debug, perf, upgrade

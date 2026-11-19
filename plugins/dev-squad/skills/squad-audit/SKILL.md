@@ -33,7 +33,9 @@ The miner covers:
 - **Long prompts written from scratch**.
 - **Hand-offs and pastes**: Handoff blocks pasted by the user, and large pastes.
 - **Interrupted turns**.
-- **Sub-agent health**: tool errors, missing Handoff, blocked or needs-input statuses, and `Next:` lines naming agents that don't exist.
+- **Sub-agent health**: tool errors, missing Handoff, blocked or needs-input statuses, non-standard `Status:` values, and `Next:` lines naming agents that don't exist. Reports delivered through the `SubagentHandback` tool count as Handoffs.
+- **Adoption**: for each audited plugin, usage since its first use (prompts and sessions). Use this window when the plugin was installed partway through the audit window.
+- **Hygiene**: prompts duplicated by forked or resumed sessions are removed (count reported); harness commands such as `/model` and `/compact` are ignored. Every list states "showing N of M" when truncated, and `--json` has the full totals.
 - **Skipped steps**: sessions that changed code without running tests or a review.
 
 Everything is a **keyword heuristic**. Open the source with `--show` before you cite an item, and drop false positives. For example, a "correction" may only be a follow-up question.
@@ -41,7 +43,7 @@ Everything is a **keyword heuristic**. Open the source with `--show` before you 
 claude.ai chats are not on disk. Use conversation-search tools only if they are available to you; otherwise record "không có dữ liệu", or ask the user to export the relevant chats.
 
 **2. Squad artifacts.**
-- dev-squad: `.squad/TASKS.md`, `.squad/reports/`, `.squad/incidents/`, `.squad/design/`, `.squad/adr/`, `.squad/perf/`, earlier `.squad/audit/`.
+- dev-squad: `.squad/TASKS.md`, `.squad/LESSONS.md`, `.squad/reports/`, `.squad/incidents/`, `.squad/design/`, `.squad/adr/`, `.squad/perf/`, earlier `.squad/audit/`.
 - lab: `research/PROJECT.md`, `research/lessons/LESSONS.md`, `research/lessons/squad-issues.md`, `research/lessons/retros/`, `research/experiments/*/` (ledger, `FINDINGS.md`), `research/reviews/`, `research/decisions.md`.
 
 Search for them in the projects the miner lists (overview → projects) and in the current repository.

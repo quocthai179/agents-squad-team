@@ -63,6 +63,65 @@ class AgentRulesTest(unittest.TestCase):
         self.assertIn(".squad/tmp/.gitignore", text)
 
 
+class AuditUpgradesTest(unittest.TestCase):
+    """Rules adopted from the squad audit (R1-R12)."""
+
+    def agent(self, name):
+        return read(os.path.join(PLUGIN, "agents", f"{name}.md"))
+
+    def description(self, name):
+        return re.search(r"^description: (.*)$", self.agent(name), re.M).group(1)
+
+    def test_every_agent_has_working_contract_lessons_and_user_actions(self):  # R10, R11
+        for path in sorted(glob.glob(os.path.join(PLUGIN, "agents", "*.md"))):
+            text = read(path)
+            with self.subTest(agent=os.path.basename(path)):
+                self.assertIn("**Working contract**", text)
+                self.assertIn(".squad/LESSONS.md", text)
+                self.assertIn("  - User actions:", text)
+
+    def test_playbook_defines_contract_lessons_and_user_actions(self):  # R10, R11
+        text = read(os.path.join(PLUGIN, "skills", "squad-playbook", "SKILL.md"))
+        for needle in ("## Working contract", "## Lessons (`.squad/LESSONS.md`)", "- User actions:", "Việc bạn cần làm"):
+            self.assertIn(needle, text)
+
+    def test_reviewers_keep_status_to_three_words(self):  # R3
+        for name in ("code-reviewer", "security-auditor"):
+            with self.subTest(agent=name):
+                self.assertIn("only these three words", self.agent(name))
+        self.assertIn("Do NOT use for audits", self.description("code-reviewer"))
+
+    def test_descriptions_route_the_right_work(self):  # R5, R6, R7, R8
+        self.assertIn("realistic performance or load test", self.description("performance-engineer"))
+        self.assertIn("CrashLoopBackOff", self.description("sre-incident-responder"))
+        self.assertIn("**Always write one.**", self.agent("sre-incident-responder"))
+        self.assertIn("Do NOT use for manual, exploratory or browser-driven", self.description("qa-engineer"))
+        self.assertIn("Do NOT launch it as a sub-agent", self.description("orchestrator"))
+        self.assertNotIn("Use PROACTIVELY", self.description("orchestrator"))
+
+    def test_image_build_rule_covers_all_builders(self):  # R12
+        for name in ("developer", "devops-engineer"):
+            with self.subTest(agent=name):
+                text = self.agent(name)
+                self.assertIn("Before any image build", text)
+                for builder in ("docker buildx build", "docker compose build", "podman build"):
+                    self.assertIn(builder, text)
+
+    def test_commit_msg_and_brief_commands(self):  # R1, R9
+        commit = read(os.path.join(PLUGIN, "commands", "commit-msg.md"))
+        self.assertIn("[A-Za-z][A-Za-z0-9]{1,9}[-_][0-9]{2,}", commit)
+        self.assertIn("If the two differ, stop and ask", commit)
+        self.assertIn("**Never push**", commit)
+        brief = read(os.path.join(PLUGIN, "commands", "brief.md"))
+        self.assertIn("never invent numbers", brief)
+        self.assertIn("**Cần quyết định / hỗ trợ:**", brief)
+
+    def test_review_accepts_mr_and_writes_fixed_path(self):  # R2
+        text = read(os.path.join(PLUGIN, "commands", "review.md"))
+        self.assertIn("`.squad/reports/review-mr-<id>.md`", text)
+        self.assertIn("Never post comments, approve or merge", text)
+
+
 class ReviewGateTest(unittest.TestCase):
     def test_playbook_defines_gate_and_blocking(self):
         text = read(os.path.join(PLUGIN, "skills", "squad-playbook", "SKILL.md"))

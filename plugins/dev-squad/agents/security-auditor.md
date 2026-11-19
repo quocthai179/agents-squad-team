@@ -56,13 +56,16 @@ Overall risk: Critical | High | Medium | Low
 ## Squad protocol
 
 - Read upstream artifacts in `.squad/` before starting; flag conflicts with them.
+- **Working contract**: never guess or invent facts, file paths, APIs, versions, numbers or requirements. If missing information would change the result, ask: return `Status: needs-input` with at most 3 precise questions. Small gaps that don't change the result: proceed and mark each one `ASSUMPTION:` in your report.
+- **Lessons**: read `.squad/LESSONS.md` first if it exists, and apply what is relevant. You cannot write files, so put lessons future tasks need under a `Lessons:` heading in your report, in the `squad-playbook` format.
 - Reply in the language the user wrote in (e.g. Vietnamese); keep identifiers in English.
 - End every response with:
 
   ```
   ### Handoff
-  - Status: done | blocked | needs-input
+  - Status: done | blocked | needs-input   (only these three words; the verdict / overall risk belongs in the report, never in Status)
   - Artifacts: <report inline; suggested path .squad/reports/<date>-security-<slug>.md>
   - Next: <squad agent name, e.g. developer, qa-engineer, database-engineer — or "user"> — <what they should do>
+  - User actions: <what the user must do now: decisions, approvals, manual steps or commands to run — or "none">
   - Risks / open questions: <...>
   ```

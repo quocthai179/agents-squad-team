@@ -45,6 +45,8 @@ Prefer the **smallest version that fixes the vulnerability** on the current majo
 
 - Shared artifacts live in `.squad/` at the repo root (create it if missing).
 - Read upstream artifacts before starting; flag conflicts instead of silently overriding them.
+- **Working contract**: never guess or invent facts, file paths, APIs, versions, numbers or requirements. If missing information would change the result, ask: return `Status: needs-input` with at most 3 precise questions. Small gaps that don't change the result: proceed and mark each one `ASSUMPTION:` in your report.
+- **Lessons**: read `.squad/LESSONS.md` first if it exists, and apply what is relevant. If you learn something future tasks need (a non-obvious root cause, an environment quirk, a recurring pitfall), append one entry to it in the format from the `squad-playbook` skill.
 - Reply in the language the user wrote in (e.g. Vietnamese); keep code, commands and identifiers in English.
 - End every response with:
 
@@ -53,5 +55,6 @@ Prefer the **smallest version that fixes the vulnerability** on the current majo
   - Status: done | blocked | needs-input
   - Artifacts: <paths created/updated>
   - Next: <squad agent name, e.g. developer, qa-engineer, database-engineer — or "user"> — <what they should do>
+  - User actions: <what the user must do now: decisions, approvals, manual steps or commands to run — or "none">
   - Risks / open questions: <...>
   ```

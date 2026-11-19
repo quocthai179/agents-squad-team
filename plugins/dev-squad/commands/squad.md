@@ -14,7 +14,7 @@ Follow the orchestrator playbook:
 3. Show the dispatch plan as a table (`# | Agent | Task | Inputs | Expected output | Depends on`), marking steps that can run in parallel, plus your assumptions.
 4. Execute the plan by launching the squad agents with the Agent tool (`subagent_type`: `dev-squad:business-analyst`, `dev-squad:project-manager`, `dev-squad:architect`, `dev-squad:developer`, `dev-squad:qa-engineer`, `dev-squad:code-reviewer`, `dev-squad:debugger`, `dev-squad:devops-engineer`, `dev-squad:security-auditor`, `dev-squad:performance-engineer`, `dev-squad:database-engineer`, `dev-squad:sre-incident-responder`, `dev-squad:dependency-upgrader`, `dev-squad:tech-writer`, `dev-squad:squad-auditor`). Give each a self-contained brief — they do not see this conversation. Run independent steps in parallel.
 5. Gate every handoff: read each agent's `Handoff` block; send failed or blocked work back with specific feedback before moving on.
-6. Finish with a summary: what changed, files touched, verification evidence (test output), open risks and follow-ups.
+6. Finish with a summary: what changed, files touched, verification evidence (test output), open risks and follow-ups. End with a `Việc bạn cần làm` / `User actions` list (see the `squad-playbook` skill).
 
 Do not commit or push unless the user asks. Before any push or MR, apply the review gate from the `squad-playbook` skill: run `/dev-squad:review`, resolve or have the user defer every blocking finding, then push only after the user confirms.
 

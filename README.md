@@ -1,156 +1,158 @@
 # Agents Squad Team 🧑‍💻🤖
 
-![Agents Squad Team — 16 agent chuyên biệt, 14 lệnh workflow cho Claude Code](assets/marketing/hero-banner.png)
+![Agents Squad Team — 16 specialized agents and 14 workflow commands for Claude Code](assets/marketing/hero-banner.png)
 
-Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **16 agent chuyên biệt** (1 trưởng nhóm điều phối + 15 chuyên gia) và **14 lệnh workflow** giúp bạn đi trọn vòng đời phát triển phần mềm: phân tích yêu cầu → thiết kế → chia task → code → test → review → bảo mật → performance → migration DB → release → xử lý sự cố → nâng cấp dependency, kèm agent tự audit chính bộ squad.
+A **Claude Code** plugin that gives you a development squad of **16 specialized agents** (one coordinating lead and 15 specialists) and **14 workflow commands** covering the software development lifecycle: requirements → design → task planning → implementation → testing → review → security → performance → database migrations → release → incident response → dependency upgrades. It also includes an agent that audits the squad itself.
 
-## Đội hình
+## Meet the squad
 
-![Một orchestrator, 15 chuyên gia, chia sẻ tài liệu và bàn giao qua thư mục .squad](assets/marketing/specialists-shared-context.png)
+![One orchestrator and 15 specialists sharing artifacts and handoffs through the .squad directory](assets/marketing/specialists-shared-context.png)
 
-*Minh họa một số vai trò trong đội; danh sách đầy đủ ở bảng bên dưới.*
+*The illustration shows a selection of roles. The full roster is listed below.*
 
-| Agent | Vai trò | Khi nào dùng | Quyền |
+| Agent | Role | When to use it | Permissions |
 |---|---|---|---|
-| 🟣 `orchestrator` | Tech lead / điều phối | Yêu cầu nhiều bước, mơ hồ, cần nhiều vai trò phối hợp | Toàn quyền (kế thừa) |
-| 🩵 `business-analyst` | BA | Làm rõ yêu cầu, user story, acceptance criteria (Given/When/Then) | Đọc + viết tài liệu |
-| 🟡 `project-manager` | PM / Scrum master | Chia task, ước lượng, dependency, `TASKS.md`, standup, rủi ro | Đọc + viết tài liệu + git read-only |
-| 🔵 `architect` | Kiến trúc sư | Thiết kế module/API/data model, ADR, so sánh công nghệ | Đọc + viết tài liệu thiết kế |
-| 🟢 `developer` | Senior full-stack dev | Implement feature, refactor, fix bug, viết unit test; lập checklist yêu cầu trước khi code và đánh dấu ✅/❌/⏭ kèm bằng chứng | Đọc/ghi code + chạy lệnh |
-| 🟠 `qa-engineer` | QA / test automation | Test plan, viết & chạy unit/integration/e2e test, báo cáo bug | Đọc/ghi test + chạy lệnh |
-| 🔴 `code-reviewer` | Reviewer | Review diff trước khi merge (correctness, performance, test…) | **Chỉ đọc** |
-| 🩷 `debugger` | Chuyên gia debug | Lỗi, stack trace, test fail, flaky, "chạy local được mà CI thì không" | Đọc/ghi code + chạy lệnh |
-| 🩵 `devops-engineer` | DevOps | CI/CD, Docker, K8s, Terraform, checklist trước deploy | Đọc/ghi config + chạy lệnh |
-| 🔴 `security-auditor` | Bảo mật | Audit OWASP/CWE, secrets, authz, dependency có lỗ hổng | **Chỉ đọc** |
-| 🟡 `performance-engineer` | Chuyên gia performance | Query chậm, N+1, thiếu index, lock, connection pool; Kafka/RabbitMQ lag, ack/nack/commit sai, redelivery loop, rebalance; profiling CPU/memory; **tự tạo tool giả lập tải đột biến** (skill `load-simulation`) | Đọc/ghi code + chạy lệnh (đo trước/sau) |
-| 🟢 `database-engineer` | Kỹ sư database | Thay đổi schema/dữ liệu không downtime (expand → migrate → contract), đánh giá lock trên bảng lớn, backfill theo batch, rollback, review migration (Flyway, Liquibase, Alembic, Prisma…) | Đọc/ghi migration + chạy lệnh (chỉ DB local) |
-| 🔴 `sre-incident-responder` | SRE / xử lý sự cố | Production sập hoặc chậm: đánh giá mức độ, tìm thay đổi gây lỗi, đề xuất cách giảm thiểu, timeline, status update, postmortem; SLO, alert, runbook | Production chỉ đọc; mọi thay đổi phải được bạn duyệt |
-| 🟠 `dependency-upgrader` | Nâng cấp dependency | Spring Boot 2→3, Java 17→21, Node, Python, React…; vá CVE; đọc migration guide, OpenRewrite/codemod, nâng từng bước có test | Đọc/ghi code + chạy lệnh |
-| 🔵 `tech-writer` | Technical writer | README, API docs, CHANGELOG, runbook, hướng dẫn | Đọc/ghi tài liệu |
-| 🩵 `squad-auditor` | Squad Auditor (EM + AI-workflow coach) | Audit chính bộ squad (dev-squad, lab) từ lịch sử làm việc thật: thiếu agent nào, agent nào yếu/thừa/chồng chéo, việc cần làm | Chỉ ghi vào `.squad/audit/`; không tự sửa squad |
+| 🟣 `orchestrator` | Tech lead / coordinator | Ambiguous or multi-step requests that require several roles to work together | Full access (inherited) |
+| 🩵 `business-analyst` | Business analyst | Clarify requirements, write user stories and acceptance criteria (Given/When/Then) | Read + write documentation |
+| 🟡 `project-manager` | PM / Scrum master | Break down tasks, estimate work, track dependencies, maintain `TASKS.md`, prepare standups, and identify risks | Read + write documentation + read-only Git |
+| 🔵 `architect` | Software architect | Design modules, APIs, and data models; write ADRs; compare technologies | Read + write design documentation |
+| 🟢 `developer` | Senior full-stack developer | Implement features, refactor, fix bugs, and write unit tests; create a requirements checklist before coding and mark each item ✅/❌/⏭ with evidence | Read/write code + run commands |
+| 🟠 `qa-engineer` | QA / test automation | Plan tests, write and run unit/integration/end-to-end tests, and report bugs | Read/write tests + run commands |
+| 🔴 `code-reviewer` | Code reviewer | Review diffs before merging for correctness, performance, test coverage, and more | **Read-only** |
+| 🩷 `debugger` | Debugging specialist | Investigate errors, stack traces, failing or flaky tests, and “works locally but fails in CI” problems | Read/write code + run commands |
+| 🩵 `devops-engineer` | DevOps engineer | Work on CI/CD, Docker, Kubernetes, Terraform, and deployment checklists | Read/write configuration + run commands |
+| 🔴 `security-auditor` | Security auditor | Audit OWASP/CWE issues, secrets, authorization, and vulnerable dependencies | **Read-only** |
+| 🟡 `performance-engineer` | Performance specialist | Investigate slow queries, N+1 queries, missing indexes, locks, and connection pools; Kafka/RabbitMQ lag, incorrect ack/nack/commit handling, redelivery loops, and rebalances; profile CPU/memory; **build tools to simulate sudden load spikes** with the `load-simulation` skill | Read/write code + run commands (measure before/after) |
+| 🟢 `database-engineer` | Database engineer | Plan zero-downtime schema/data changes (expand → migrate → contract), assess locks on large tables, batch backfills, rollbacks, and migration reviews (Flyway, Liquibase, Alembic, Prisma, and more) | Read/write migrations + run commands (local databases only) |
+| 🔴 `sre-incident-responder` | SRE / incident responder | Handle production outages or degradation: assess severity, identify triggering changes, propose mitigations, maintain timelines and status updates, write postmortems, and work on SLOs, alerts, and runbooks | Read-only in production; every production change requires your approval |
+| 🟠 `dependency-upgrader` | Dependency upgrade specialist | Upgrade Spring Boot 2→3, Java 17→21, Node, Python, React, and more; patch CVEs; follow migration guides; use OpenRewrite/codemods; upgrade incrementally with tests | Read/write code + run commands |
+| 🔵 `tech-writer` | Technical writer | Write READMEs, API documentation, CHANGELOGs, runbooks, and guides | Read + write documentation |
+| 🩵 `squad-auditor` | Squad auditor (engineering manager + AI workflow coach) | Audit the squad itself (`dev-squad`, `lab`) using real work history to identify missing, weak, redundant, or overlapping agents and recommend actions | Write only to `.squad/audit/`; never modifies the squad automatically |
 
-Mỗi agent đều:
-- tự đọc codebase và tuân theo convention có sẵn của dự án,
-- trả lời bằng **ngôn ngữ bạn dùng** (tiếng Việt → tiếng Việt), còn code/identifier giữ tiếng Anh,
-- lưu kết quả vào thư mục chung `.squad/` để agent sau đọc tiếp,
-- kết thúc bằng khối **Handoff** (trạng thái, artifact, agent tiếp theo, rủi ro).
+Every agent:
 
-## Lệnh workflow (slash commands)
+- Reads the codebase and follows the project's existing conventions.
+- Responds in **your language** (for example, Vietnamese in → Vietnamese out), while keeping code and identifiers in English.
+- Saves artifacts in the shared `.squad/` directory so the next agent can continue with the right context.
+- Ends with a **Handoff** block containing status, artifacts, the next agent, and risks.
 
-![Workflow feature: làm rõ yêu cầu, thiết kế, chia task, code, QA, review, tài liệu và đóng task](assets/marketing/feature-workflow.png)
+## Workflow commands
 
-*Sơ đồ tóm tắt `/dev-squad:feature`: QA fail sẽ quay lại sửa và test; security audit áp dụng khi tính năng có liên quan.*
+![Feature workflow: clarify requirements, design, plan tasks, implement, test, review, document, and close tasks](assets/marketing/feature-workflow.png)
 
-| Lệnh | Pipeline |
+*Overview of `/dev-squad:feature`: failed QA checks return to implementation and testing; security auditing applies when relevant to the feature.*
+
+| Command | Pipeline |
 |---|---|
-| `/dev-squad:squad <yêu cầu>` | Orchestrator tự phân tích, lập kế hoạch và giao việc cho agent phù hợp |
-| `/dev-squad:feature <mô tả>` | BA → Architect → PM → Developer → QA (lặp tới khi PASS) → Reviewer ∥ Security → Tech writer |
-| `/dev-squad:bugfix <lỗi>` | Debugger → (Developer) → QA regression test → Reviewer |
-| `/dev-squad:review [URL MR/PR \| !iid \| branch \| range]` | Code reviewer ∥ Security auditor chạy song song, gộp báo cáo; nhận cả URL/số MR/PR; luôn ghi báo cáo gộp ra đường dẫn cố định (`.squad/reports/review-mr-<id>.md`); kết luận READY TO PUSH / NOT READY |
-| `/dev-squad:commit-msg [ngữ cảnh]` | Soạn commit message từ diff đã stage theo đúng style của repo; lấy ticket ID từ tên branch và **cảnh báo nếu ticket không khớp** (cả với các commit chưa push); chỉ commit khi bạn xác nhận |
-| `/dev-squad:brief [đối tượng]` | Tóm tắt cho quản lý (hiểu lập trình nhưng không đọc code) theo một format cố định ≤250 từ: tóm tắt, vấn đề, đã làm, kết quả có bằng chứng, rủi ro, cần quyết định, bước tiếp theo |
-| `/dev-squad:sprint-plan <mục tiêu>` | BA → (Architect) → PM, tạo board `.squad/TASKS.md` |
-| `/dev-squad:standup [khoảng thời gian]` | PM tổng hợp từ git log + task board |
-| `/dev-squad:ship [version]` | DevOps ∥ Security ∥ QA ∥ DB engineer (review migration) → Tech writer → kết luận GO / NO-GO |
-| `/dev-squad:db-change <thay đổi>` | DB engineer lập kế hoạch migration không downtime → bạn duyệt → DB engineer ∥ Developer → QA chạy migrate up/down → Reviewer ∥ DB engineer → ghi chú rollout |
-| `/dev-squad:incident <sự cố>` | SRE đánh giá & đề xuất giảm thiểu → bạn duyệt → tìm nguyên nhân gốc (Debugger / Perf / DB / DevOps) → fix → postmortem → PM tạo action items |
-| `/dev-squad:upgrade <mục tiêu>` | Upgrader kiểm kê & lập kế hoạch → bạn duyệt → nâng từng bước có test → QA ∥ Security ∥ Perf → Reviewer → CHANGELOG |
-| `/dev-squad:audit [dev-squad\|lab\|both] [khoảng thời gian]` | Hỏi tối đa 3 câu → Squad Auditor đọc transcript, `.squad/`, `research/`, git, định nghĩa agent → báo cáo có dẫn nguồn + bản nháp agent mới → bạn chọn cái cần áp dụng |
-| `/dev-squad:perf <vấn đề>` | Performance engineer đo baseline & tìm bottleneck → Developer fix → QA ∥ đo lại trước/sau → Reviewer |
+| `/dev-squad:squad <request>` | The orchestrator analyzes the request, plans the work, and delegates to the appropriate agents |
+| `/dev-squad:feature <description>` | BA → Architect → PM → Developer → QA (repeat until PASS) → Reviewer ∥ Security → Tech writer |
+| `/dev-squad:bugfix <bug>` | Debugger → (Developer) → QA regression tests → Reviewer |
+| `/dev-squad:review [MR/PR URL \| !iid \| branch \| range]` | Code reviewer ∥ Security auditor run in parallel and produce a merged report; accepts MR/PR URLs or numbers; always saves the merged report to a fixed path (`.squad/reports/review-mr-<id>.md` for an MR/PR); concludes with READY TO PUSH / NOT READY |
+| `/dev-squad:commit-msg [context]` | Drafts a commit message from the staged diff using the repository's style; extracts the ticket ID from the branch name and **warns about mismatched ticket IDs**, including in unpushed commits; commits only after your confirmation |
+| `/dev-squad:brief [audience]` | Produces a fixed-format summary of no more than 250 words for a manager who understands programming but does not read the code: summary, problem, work completed, evidence-backed results, risks, decisions needed, and next steps |
+| `/dev-squad:sprint-plan <goal>` | BA → (Architect) → PM; creates the board at `.squad/TASKS.md` |
+| `/dev-squad:standup [time range]` | PM summarizes the Git log and task board |
+| `/dev-squad:ship [version]` | DevOps ∥ Security ∥ QA ∥ DB engineer (migration review) → Tech writer → GO / NO-GO |
+| `/dev-squad:db-change <change>` | DB engineer plans a zero-downtime migration → you approve → DB engineer ∥ Developer → QA tests migration up/down → Reviewer ∥ DB engineer → rollout notes |
+| `/dev-squad:incident <incident>` | SRE assesses the incident and proposes mitigations → you approve → root cause investigation (Debugger / Perf / DB / DevOps) → fix → postmortem → PM creates action items |
+| `/dev-squad:upgrade <target>` | Upgrader inventories dependencies and prepares a plan → you approve → incremental upgrades with tests → QA ∥ Security ∥ Perf → Reviewer → CHANGELOG |
+| `/dev-squad:audit [dev-squad\|lab\|both] [time range]` | Asks up to three questions → Squad auditor reads transcripts, `.squad/`, `research/`, Git history, and agent definitions → evidence-backed report + draft agents → you choose what to adopt |
+| `/dev-squad:perf <problem>` | Performance engineer measures a baseline and identifies bottlenecks → Developer fixes them → QA ∥ before/after measurements → Reviewer |
 
-Ngoài ra skill `squad-playbook` giúp Claude tự biết nên gọi agent nào khi bạn nói kiểu *"dùng squad làm…"*.
+The `squad-playbook` skill also helps Claude choose the right agents when you say something like *“use the squad to…”*.
 
-## Skill `load-simulation` — giả lập tải đột biến
+## `load-simulation` skill — reproduce sudden load spikes
 
-Phần lớn sự cố performance không xảy ra lúc tải bình thường, mà xảy ra khi traffic **tăng đột ngột**: chạy campaign, cron job trùng giờ cao điểm, retry storm, consumer khởi động lại với backlog lớn, cache bị flush sau deploy… Skill này được nạp sẵn cho `performance-engineer` và `sre-incident-responder` (bạn cũng có thể gọi trực tiếp bằng `/dev-squad:load-simulation`). Nó giúp agent **tự dựng tool tái hiện sự cố** ngay trong dự án của bạn, tại `.squad/perf/<kịch-bản>/`, rồi đo lại trước/sau khi sửa.
+Many performance incidents occur when traffic **rises suddenly**: a campaign launches, scheduled jobs coincide with peak traffic, retries cascade, a consumer restarts with a large backlog, or a deployment flushes the cache. This skill is preloaded for `performance-engineer` and `sre-incident-responder` (you can also invoke it directly with `/dev-squad:load-simulation`). It helps agents **build tools that reproduce the incident** inside your project at `.squad/perf/<scenario>/`, then compare measurements before and after a fix.
 
-| Tool | Giả lập | Cần cài |
+| Tool | What it simulates | Requirements |
 |---|---|---|
-| `db_burst.py` | Dồn query đột biến vào PostgreSQL/MySQL/SQLite: cạn connection pool, query chậm khi chạy đồng thời, lock trên hot row, transaction dài, connection storm; theo dõi `pg_stat_activity` theo từng giây | `psycopg[binary]` / `pymysql` |
-| `http_burst.py` | Traffic HTTP tăng vọt, trộn nhiều endpoint theo trọng số, cache stampede, keep-alive hoặc connection storm | chỉ thư viện chuẩn |
-| `kafka_burst.py` | `produce` burst (acks, batching, nén, sync và async, key lệch → hot partition, poison message); `consume` giả lập consumer chậm, nack/seek retry vô hạn, DLQ, các kiểu commit, vượt `max.poll.interval.ms`; `lag` theo dõi lag | `confluent-kafka` |
-| `spike_http.js` | Template k6 cho spike HTTP hàng nghìn req/s | `k6` |
-| `loadkit.py` | Engine dùng chung để tự viết tool mới (gRPC, Redis, MongoDB, RabbitMQ…) | chỉ thư viện chuẩn |
+| `db_burst.py` | Bursts of queries against PostgreSQL/MySQL/SQLite: connection pool exhaustion, slow concurrent queries, hot-row locks, long transactions, and connection storms; monitors `pg_stat_activity` every second | `psycopg[binary]` / `pymysql` |
+| `http_burst.py` | Sudden HTTP traffic spikes, weighted endpoint mixes, cache stampedes, keep-alive traffic, or connection storms | Standard library only |
+| `kafka_burst.py` | `produce` bursts (acks, batching, compression, sync/async, skewed keys → hot partitions, poison messages); `consume` simulates slow consumers, endless nack/seek retries, DLQs, commit strategies, and exceeding `max.poll.interval.ms`; `lag` monitors consumer lag | `confluent-kafka` |
+| `spike_http.js` | A k6 template for HTTP spikes reaching thousands of requests per second | `k6` |
+| `loadkit.py` | A shared engine for building additional tools (gRPC, Redis, MongoDB, RabbitMQ, and more) | Standard library only |
 
-Đặc điểm chính:
-- **Mô hình open-model**: request đến theo lịch như traffic thật. Latency được đo từ thời điểm *dự kiến gửi*, nên thời gian chờ pool/worker cũng được tính, tránh lỗi coordinated omission.
-- **Hình dạng tải**: `spike`, `burst`, `ramp`, `step`, `constant`, hoặc tự định nghĩa qua `--profile "30s:10,1s:10->800,60s:800,30s:10"`.
-- **Phân bố key lệch** `{{zipf:N:S}}` để mô phỏng hot key / hot row.
-- **Báo cáo theo từng giai đoạn** baseline / spike / recovery (p50/p95/p99, service time, drop), kèm gợi ý chẩn đoán và file JSON.
-- **An toàn mặc định**: từ chối host không phải local; DB chỉ đọc trừ khi có `--allow-write`; không lưu token vào báo cáo.
-- Có catalog **18 kịch bản** sự cố hay gặp kèm lệnh tái hiện và cách sửa (`references/scenarios.md`).
+Key features:
 
-Ví dụ:
+- **Open-model load generation**: requests arrive on a schedule, like real traffic. Latency is measured from the *scheduled send time*, including time waiting for pools or workers, to avoid coordinated omission.
+- **Load shapes**: `spike`, `burst`, `ramp`, `step`, `constant`, or custom profiles such as `--profile "30s:10,1s:10->800,60s:800,30s:10"`.
+- **Skewed key distributions** with `{{zipf:N:S}}` to simulate hot keys and hot rows.
+- **Per-phase reporting** for baseline / spike / recovery (p50/p95/p99, service time, drops), with diagnostic suggestions and JSON output.
+- **Safe defaults**: rejects non-local hosts; database access is read-only unless `--allow-write` is set; tokens are not saved in reports.
+- A catalog of **18 common incident scenarios**, including reproduction commands and fixes (`references/scenarios.md`).
+
+Examples:
 
 ```bash
-# Query không có index: baseline 5 q/s, sau đó tăng vọt lên 600 q/s
+# Query without an index: baseline of 5 queries/s, then a spike to 600 queries/s
 python db_burst.py --dsn postgresql://app:app@localhost/app --pool 10 --observe \
   --query "SELECT * FROM orders WHERE customer_id = {{randint:1:50000}}" --shape spike --base 5 --peak 600
 
-# Poison message + nack/seek retry → partition bị kẹt; so sánh với retry giới hạn + DLQ
+# Poison message + nack/seek retries stall a partition; compare bounded retries + DLQ
 python kafka_burst.py produce --topic perf-payments --profile "4s:2500" --poison-every 3000
 python kafka_burst.py consume --topic perf-payments --group sim --on-error retry-seek --duration 30s
 python kafka_burst.py consume --topic perf-payments --group sim2 --on-error dlq --max-retries 3
 ```
 
-Kết quả kiểm thử thật trên PostgreSQL 16 (bảng 600k dòng, pool 10, spike 600 q/s):
+Recorded test results on PostgreSQL 16 (600,000-row table, pool size 10, spike of 600 queries/s):
 
-| Giai đoạn | Trước khi thêm index (p95) | Sau khi thêm index (p95) |
+| Phase | Before adding an index (p95) | After adding an index (p95) |
 |---|---|---|
-| baseline 5 q/s | 23 ms | 4.1 ms |
-| spike 600 q/s | 15 710 ms, 835 request bị drop | 1.2 ms, 0 drop |
-| recovery 5 q/s | 15 317 ms (chưa hồi phục) | 5.2 ms |
+| Baseline: 5 queries/s | 23 ms | 4.1 ms |
+| Spike: 600 queries/s | 15,710 ms; 835 requests dropped | 1.2 ms; 0 drops |
+| Recovery: 5 queries/s | 15,317 ms (not yet recovered) | 5.2 ms |
 
-## Agent `squad-auditor` — tự audit bộ squad
+## `squad-auditor` agent — audit the squad itself
 
-Agent này đóng vai engineering manager kiêm AI-workflow coach, audit chính bộ squad (dev-squad, lab) dựa trên **lịch sử làm việc thật**, không dựa trên cảm tính:
+This agent acts as an engineering manager and AI workflow coach. It audits the squads (`dev-squad`, `lab`) using **real work history**:
 
-1. **Thu thập bằng chứng** theo thứ tự, ghi rõ nguồn nào đọc được và nguồn nào "không có dữ liệu":
-   - transcript Claude Code (`~/.claude/projects/**/*.jsonl`, gồm cả transcript của subagent),
-   - `.squad/` và `research/` (TASKS, reports, incidents, LESSONS, squad-issues, retro),
-   - git log,
-   - định nghĩa agent, skill và command đang có.
-2. **Lập danh mục công việc** (work inventory), rồi tìm tín hiệu thiếu agent:
-   - việc lặp lại ≥3 lần mà làm tay,
-   - prompt dài viết lại từ đầu,
-   - bị sửa output ngay sau khi agent chạy,
-   - chỉ dẫn lặp lại qua nhiều session,
-   - handoff phải copy-paste tay,
-   - agent không bao giờ được gọi,
-   - bước hay bị bỏ (test, review),
-   - domain riêng như SNMP/MIB, Quarkus, OVNG.
-3. **Đánh giá từng agent** (giữ / sửa prompt / sửa description / gộp / bỏ) và **đề xuất tối đa 5 agent mới**, mỗi agent phải có ≥2 ví dụ thật, kèm bản nháp file. Sau đó agent **tự phản biện** để loại các đề xuất làm squad phình to không cần thiết.
-4. **Báo cáo** tại `.squad/audit/<ngày>/squad-audit.md`: TL;DR, kế hoạch hành động (quick win, tuần này, tháng này) và metric để đo lại sau 2–4 tuần.
+1. **Gather evidence** in the following order, stating which sources are accessible and which have “no data”:
+   - Claude Code transcripts (`~/.claude/projects/**/*.jsonl`, including subagent transcripts).
+   - `.squad/` and `research/` (TASKS, reports, incidents, LESSONS, squad-issues, retro).
+   - Git history.
+   - Existing agent, skill, and command definitions.
+2. **Build a work inventory** and look for signs that an agent is missing:
+   - Manual work repeated at least three times.
+   - Long prompts rewritten from scratch.
+   - Outputs corrected immediately after an agent runs.
+   - Instructions repeated across sessions.
+   - Handoffs copied and pasted manually.
+   - Agents that are never invoked.
+   - Frequently skipped steps, such as testing or review.
+   - Domain-specific work, such as SNMP/MIB, Quarkus, or OVNG.
+3. **Assess each agent** (keep / revise prompt / revise description / merge / remove) and **propose up to five new agents**. Each proposal needs at least two real examples and a draft agent file. The auditor then **challenges its own proposals** to avoid unnecessary squad growth.
+4. **Write a report** to `.squad/audit/<date>/squad-audit.md`: TL;DR, an action plan (quick wins, this week, this month), and metrics to revisit after 2–4 weeks.
 
-Agent dùng skill `squad-audit`, trong đó có script `mine_transcripts.py`. Script chỉ dùng thư viện chuẩn và chạy local, tự che secret và email, và mọi phát hiện đều kèm nguồn `file:dòng`. Lệnh `--show=<ref>` cho xem ngữ cảnh để kiểm chứng trước khi trích dẫn.
+The agent uses the `squad-audit` skill, which includes `mine_transcripts.py`. This script uses only the standard library, runs locally, automatically redacts secrets and email addresses, and attaches a `file:line` source to every finding. Use `--show=<ref>` to inspect the context before citing a finding.
 
 ```bash
 python plugins/dev-squad/skills/squad-audit/scripts/mine_transcripts.py --days 30 --scope dev-squad --scope lab --md usage.md
 ```
 
-> Agent chỉ đề xuất, không tự sửa agent/skill/command. Thư mục `evidence/` chứa trích đoạn hội thoại (đã che secret), nên thêm `.squad/audit/*/evidence/` vào `.gitignore`. Chat trên claude.ai không nằm trên máy nên được ghi là "không có dữ liệu", trừ khi bạn export ra.
+> The agent only makes recommendations; it never changes agent, skill, or command definitions automatically. The `evidence/` directory contains redacted conversation excerpts, so add `.squad/audit/*/evidence/` to `.gitignore`. Conversations on claude.ai are marked as “no data” unless you export them to a local file.
 
-## Cài đặt
+## Installation
 
-### Cách 1 — qua marketplace (khuyến nghị)
+### Option 1 — install through the marketplace (recommended)
 
-Trong Claude Code:
+In Claude Code:
 
-```
+```text
 /plugin marketplace add quocthai179/agents-squad-team
 /plugin install dev-squad@agents-squad-team
 ```
 
-Sau đó khởi động lại session (hoặc chạy `/reload-plugins` nếu bản Claude Code của bạn hỗ trợ).
+Restart the session afterward, or run `/reload-plugins` if your version of Claude Code supports it.
 
-### Cách 2 — chạy trực tiếp từ thư mục (dev / thử nghiệm)
+### Option 2 — load directly from a local directory (development / testing)
 
 ```bash
 git clone https://github.com/quocthai179/agents-squad-team.git
 claude --plugin-dir ./agents-squad-team/plugins/dev-squad
 ```
 
-### Cách 3 — bật cho cả team qua `.claude/settings.json` của repo
+### Option 3 — enable for the whole team through the repository's `.claude/settings.json`
 
 ```json
 {
@@ -165,113 +167,113 @@ claude --plugin-dir ./agents-squad-team/plugins/dev-squad
 }
 ```
 
-## Cách dùng
+## Usage
 
-**Giao cả quy trình bằng lệnh:**
+**Delegate an entire workflow with a command:**
 
-```
-/dev-squad:feature Thêm chức năng đặt lại mật khẩu qua email, link hết hạn sau 30 phút
-/dev-squad:bugfix  TypeError: Cannot read properties of undefined (reading 'id') ở OrderService.create
+```text
+/dev-squad:feature Add email-based password resets with links that expire after 30 minutes
+/dev-squad:bugfix  TypeError: Cannot read properties of undefined (reading 'id') in OrderService.create
 /dev-squad:review  origin/main...HEAD
-/dev-squad:sprint-plan Xây module quản lý kho, capacity 30 points
-/dev-squad:perf    Consumer topic order-events lag tăng liên tục, có log nack lặp lại cùng offset
+/dev-squad:sprint-plan Build an inventory management module with a capacity of 30 points
+/dev-squad:perf    Consumer lag on order-events keeps growing, with repeated nacks at the same offset
 /dev-squad:perf    API GET /orders p95 = 2s, target 300ms
-/dev-squad:perf    Hệ thống chậm hẳn mỗi khi chạy flash sale, cần dựng tool giả lập spike để tái hiện
-/dev-squad:db-change  Thêm cột tenant_id NOT NULL vào bảng orders (80 triệu dòng), không được downtime
-/dev-squad:incident   Checkout trả 5xx từ 14:05 UTC, ngay sau khi deploy v2.3.1
-/dev-squad:upgrade    Spring Boot 2.7 → 3.3 và Java 17 → 21
+/dev-squad:perf    The system slows down during flash sales; build a spike simulator to reproduce it
+/dev-squad:db-change  Add a NOT NULL tenant_id column to orders (80 million rows), with zero downtime
+/dev-squad:incident   Checkout started returning 5xx at 14:05 UTC, immediately after deploying v2.3.1
+/dev-squad:upgrade    Spring Boot 2.7 → 3.3 and Java 17 → 21
 ```
 
-**Gọi đích danh một agent:**
+**Invoke a specific agent:**
 
-```
-Dùng agent business-analyst viết user story cho tính năng xuất báo cáo PDF
-@dev-squad:qa-engineer viết test cho src/services/payment.ts
+```text
+Use the business-analyst agent to write user stories for a PDF export feature
+@dev-squad:qa-engineer write tests for src/services/payment.ts
 ```
 
-**Dùng orchestrator làm agent chính của cả session** (khi đó nó có thể tự spawn các agent khác):
+**Use the orchestrator as the main agent for the entire session**, allowing it to spawn other agents:
 
 ```bash
 claude --agent dev-squad:orchestrator
 ```
 
-> ℹ️ Trong Claude Code, subagent không thể tự gọi subagent khác. Vì vậy việc điều phối nhiều agent được thực hiện ở session chính — qua các lệnh `/dev-squad:*`, hoặc bằng cách chạy orchestrator làm agent chính như trên. Nếu orchestrator được gọi như một subagent, nó sẽ trả về kế hoạch + brief cho từng bước để session chính thực thi.
+> ℹ️ In Claude Code, a subagent cannot invoke other subagents. Multi-agent orchestration therefore runs in the main session through `/dev-squad:*` commands, or by running the orchestrator as the main agent as shown above. If invoked as a subagent, the orchestrator returns a plan and a brief for each step for the main session to execute.
 
-## Thư mục làm việc chung `.squad/`
+## Shared workspace: `.squad/`
 
-Các agent trao đổi qua file để agent sau có đủ ngữ cảnh:
+Agents exchange files so the next agent has the context it needs:
 
-```
+```text
 .squad/
 ├── requirements/<feature>.md        # business-analyst
 ├── design/<feature>.md              # architect
-├── adr/0001-<quyet-dinh>.md         # architect
-├── TASKS.md                         # project-manager (nguồn sự thật về task)
-├── perf/<kịch-bản>/                 # performance-engineer: tool giả lập tải chạy lại được
-├── tmp/                             # developer: script và log tạm (tự gitignore)
-├── LESSONS.md                       # bài học chung: mọi agent đọc, agent có quyền ghi thì ghi thêm
-├── incidents/<ngày>-<slug>/         # sre-incident-responder: timeline, postmortem
-├── audit/<ngày>/                    # squad-auditor: squad-audit.md, drafts/, evidence/
-└── reports/<ngày>-<loại>-<slug>.md  # qa / review / security / debug / perf / upgrade
+├── adr/0001-<decision>.md            # architect
+├── TASKS.md                         # project-manager: source of truth for tasks
+├── perf/<scenario>/                 # performance-engineer: reusable load simulation tools
+├── tmp/                             # developer: temporary scripts and logs (automatically gitignored)
+├── LESSONS.md                       # shared lessons: every agent reads; write-enabled agents contribute
+├── incidents/<date>-<slug>/         # sre-incident-responder: timeline, postmortem
+├── audit/<date>/                    # squad-auditor: squad-audit.md, drafts/, evidence/
+└── reports/<date>-<type>-<slug>.md   # qa / review / security / debug / perf / upgrade
 ```
 
-Bạn có thể commit `.squad/` để lưu lịch sử planning cho cả team, hoặc thêm vào `.gitignore` nếu chỉ muốn dùng cá nhân.
+You can commit `.squad/` to share planning history with your team, or add it to `.gitignore` for personal use.
 
-## Quy ước làm việc của squad
+## Squad working conventions
 
-- **Review gate trước mọi lần push hoặc MR** (push branch, push tag, mở hay cập nhật MR/PR):
-  1. Chạy `/dev-squad:review`.
-  2. Sửa hết lỗi *blocking* (🔴 từ `code-reviewer`, Critical/High từ `security-auditor`), hoặc bạn xác nhận hoãn từng lỗi.
-  3. `/review` luôn kết thúc bằng **READY TO PUSH** hoặc **NOT READY**. Chỉ push sau khi bạn xác nhận.
+- **Review gate before every push or MR/PR**, including branch pushes, tag pushes, and opening or updating an MR/PR:
+  1. Run `/dev-squad:review`.
+  2. Fix every *blocking* finding (🔴 from `code-reviewer`, Critical/High from `security-auditor`), or explicitly approve deferring each finding.
+  3. `/review` always ends with **READY TO PUSH** or **NOT READY**. Push only after your confirmation.
 
-  Luật được định nghĩa một chỗ trong skill `squad-playbook`, các lệnh workflow trỏ về đó. Mọi agent có quyền Bash đều có luật **không bao giờ tự push**; chỉ session chính push, sau khi bạn xác nhận.
+  The rule is defined centrally in the `squad-playbook` skill; workflow commands refer to it. Every agent with Bash access follows the **never push automatically** rule. Only the main session may push, after your confirmation.
 - **`developer`:**
-  - Lập **checklist yêu cầu** (R/C/V) trước khi code, và báo cáo từng mục ✅/❌/⏭ kèm bằng chứng.
-  - **Không bao giờ chờ bằng `sleep`, vòng lặp chờ hay Monitor.** Build và test chạy foreground với `timeout` rõ ràng (tối đa 10 phút); log ghi ra file, chỉ đọc phần lỗi. Lý do: kiểm thử thực tế cho thấy subagent không nhận được thông báo khi lệnh chạy nền kết thúc, nên phải chạy build lại hai lần.
-  - Chỉ lệnh có thể chạy quá 10 phút mới chạy nền, rồi bàn giao kèm lệnh, đường dẫn log và trạng thái "chưa kiểm chứng". Session chính (nhận được thông báo) vẫn được chạy nền.
-  - Script dài (>~15 dòng hoặc có quoting phức tạp) được ghi ra file trong `.squad/tmp/` rồi chạy theo đường dẫn.
-  - `.squad/tmp/` được tạo kèm `.gitignore` trước mọi thứ khác. Script tạm không chứa secret; log được coi là nhạy cảm; trước mọi lệnh build image (`docker build`, `buildx`, `compose build`, `podman`…) phải kiểm tra `.dockerignore` đã loại `.squad/`.
+  - Create a **requirements checklist** (R/C/V) before coding, and report each item as ✅/❌/⏭ with evidence.
+  - **Never wait using `sleep`, polling loops, or Monitor.** Run builds and tests in the foreground with an explicit `timeout` (up to 10 minutes). Save logs to a file and inspect only the errors. Practical testing showed that subagents did not receive background-completion notifications, which caused builds to run twice.
+  - Only commands expected to take more than 10 minutes may run in the background. Hand them off with the command, log path, and an “unverified” status. The main session can still run background commands because it receives completion notifications.
+  - Put long scripts (more than approximately 15 lines) or scripts with complex quoting in `.squad/tmp/`, then execute them by path.
+  - Create `.squad/tmp/` with its own `.gitignore` before writing temporary files. Keep secrets out of temporary scripts and treat logs as sensitive. Before any image build (`docker build`, `buildx`, `compose build`, `podman`, and similar tools), verify that `.dockerignore` excludes `.squad/`.
 
-- **Hợp đồng làm việc** (mọi agent và mọi lệnh):
-  - Không bịa đặt. Thiếu thông tin quyết định kết quả thì **hỏi** (tối đa 3 câu, `Status: needs-input`); giả định nhỏ thì ghi `ASSUMPTION:`.
-  - Handoff luôn có mục **`User actions`**, và tóm tắt cuối của mọi lệnh kết thúc bằng **"Việc bạn cần làm"**.
-  - `Status:` chỉ nhận `done | blocked | needs-input`; verdict để trong báo cáo.
-- **Bài học chung `.squad/LESSONS.md`:** mọi agent đọc trước khi làm, rồi ghi thêm root cause, quirk môi trường hay bẫy lặp lại. Mỗi bài học là một mục ngắn có bằng chứng, không chứa secret (định dạng xem trong skill `squad-playbook`).
-- **Phạm vi agent rõ hơn:**
-  - `code-reviewer` chỉ review diff.
-  - `qa-engineer` chỉ viết test tự động trong code; test thủ công hay qua trình duyệt trên môi trường lab thì chuyển cho squad test UI riêng.
-  - `orchestrator` chỉ chạy làm agent chính hoặc qua `/dev-squad:squad`.
-  - `performance-engineer` nhận cả yêu cầu "test performance thực tế / tăng tải tới khi timeout".
-  - `sre-incident-responder` nhận cả "pod restart / crash loop / OOMKilled" và **luôn ghi postmortem** vào `.squad/incidents/`.
+- **Working contract** for every agent and command:
+  - Do not fabricate information. **Ask** when missing information could change the result (up to three questions; `Status: needs-input`). Mark minor assumptions as `ASSUMPTION:`.
+  - Every handoff includes **`User actions`**, and every command's final summary ends with **“User actions”** (or its equivalent in the user's language).
+  - `Status:` accepts only `done | blocked | needs-input`; put verdicts in the report.
+- **Shared lessons in `.squad/LESSONS.md`:** every agent reads them before starting, then write-enabled agents add root causes, environment quirks, and recurring pitfalls. Keep each lesson short, evidence-backed, and free of secrets; see the format in the `squad-playbook` skill.
+- **Clear agent boundaries:**
+  - `code-reviewer` reviews diffs only.
+  - `qa-engineer` writes automated tests in code. Manual or browser-based tests in the lab environment belong to the separate UI test squad.
+  - `orchestrator` runs only as the main agent or through `/dev-squad:squad`.
+  - `performance-engineer` also handles requests to test real performance or increase load until timeouts occur.
+  - `sre-incident-responder` also handles pod restarts, crash loops, and OOMKilled incidents, and **always writes a postmortem** to `.squad/incidents/`.
 
-## Tuỳ biến
+## Customization
 
-- **Model**: mỗi agent khai báo `model` trong frontmatter (`architect`, `security-auditor`, `performance-engineer`, `database-engineer`, `sre-incident-responder` dùng `opus`; `orchestrator` dùng `inherit`; còn lại `sonnet`). Đổi thành `opus`, `sonnet`, `haiku` hoặc `inherit` tuỳ ngân sách.
-- **Quyền công cụ**: sửa trường `tools`. `code-reviewer` và `security-auditor` cố ý không có `Write`/`Edit` để đảm bảo chỉ đọc.
-- **Thêm agent**: tạo file `plugins/dev-squad/agents/<ten>.md` theo mẫu có sẵn, thêm vào bảng trong `orchestrator.md` và `skills/squad-playbook/SKILL.md`.
-- **Ghi đè cho 1 dự án**: copy file agent vào `.claude/agents/` của dự án rồi sửa — agent cấp project được ưu tiên hơn agent của plugin.
+- **Models:** each agent declares `model` in its frontmatter. `architect`, `security-auditor`, `performance-engineer`, `database-engineer`, and `sre-incident-responder` use `opus`; `orchestrator` uses `inherit`; the others use `sonnet`. Choose `opus`, `sonnet`, `haiku`, or `inherit` to match your budget.
+- **Tool permissions:** edit the `tools` field. `code-reviewer` and `security-auditor` deliberately lack `Write`/`Edit` access to enforce read-only behavior.
+- **Add an agent:** create `plugins/dev-squad/agents/<name>.md` using an existing agent as a template, then add it to the roster in `orchestrator.md` and `skills/squad-playbook/SKILL.md`.
+- **Override an agent for one project:** copy its file to the project's `.claude/agents/` directory and customize it. Project-level agents take precedence over plugin agents.
 
-## Cấu trúc repo
+## Repository layout
 
-```
+```text
 agents-squad-team/
-├── .claude-plugin/marketplace.json     # khai báo marketplace
-├── .github/workflows/validate.yml      # CI: validate plugin + unit test
-├── tests/                             # unit test: engine giả lập tải + miner transcript
+├── .claude-plugin/marketplace.json     # marketplace definition
+├── .github/workflows/validate.yml      # CI: plugin validation + unit tests
+├── tests/                             # load simulation engine + transcript miner unit tests
 └── plugins/dev-squad/
-    ├── .claude-plugin/plugin.json      # manifest plugin
-    ├── agents/                         # 16 agent
-    ├── commands/                       # 14 lệnh workflow
+    ├── .claude-plugin/plugin.json      # plugin manifest
+    ├── agents/                         # 16 agents
+    ├── commands/                       # 14 workflow commands
     └── skills/
-        ├── squad-playbook/SKILL.md     # playbook điều phối
-        ├── squad-audit/                # skill audit squad + scripts/mine_transcripts.py
-        └── load-simulation/            # skill giả lập tải đột biến
+        ├── squad-playbook/SKILL.md     # orchestration playbook
+        ├── squad-audit/                # audit skill + scripts/mine_transcripts.py
+        └── load-simulation/            # sudden load spike simulation
             ├── SKILL.md
-            ├── references/scenarios.md # 18 kịch bản sự cố + cách tái hiện
+            ├── references/scenarios.md # 18 incident scenarios with reproduction steps
             └── scripts/                # loadkit, db_burst, http_burst, kafka_burst, spike_http.js
 ```
 
-## Kiểm tra
+## Validation
 
 ```bash
 claude plugin validate --strict .
@@ -280,11 +282,11 @@ claude --plugin-dir plugins/dev-squad plugin details dev-squad
 python3 -m unittest discover -s tests
 ```
 
-## Tài nguyên giới thiệu
+## Marketing assets
 
-- [Ảnh chia sẻ mạng xã hội](assets/marketing/social-preview.png)
-- [Sơ đồ workflow dạng SVG](assets/marketing/feature-workflow.svg)
-- [Hướng dẫn dùng bộ ảnh và prompt gốc](docs/marketing/README.md)
+- [Social preview image](assets/marketing/social-preview.png)
+- [Workflow diagram in SVG format](assets/marketing/feature-workflow.svg)
+- [Asset usage guide and original prompts (Vietnamese)](docs/marketing/README.md)
 
 ## License
 

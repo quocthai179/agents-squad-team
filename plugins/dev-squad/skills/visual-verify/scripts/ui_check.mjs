@@ -42,7 +42,8 @@ const HELP = `usage: node ui_check.mjs --base-url URL [options]
                             violation at or above LEVEL
   --fail-on-console         also exit 1 on console errors, page errors or failed requests
   --fail-on-overflow        also exit 1 on horizontal overflow
-  --timeout MS              navigation timeout (default 30000)`;
+  --timeout MS              deadline for navigation and for each in-page step (default 30000, minimum 1000;
+                            in-page checks always get at least 10000)`;
 
 const IMPACT = { minor: 1, moderate: 2, serious: 3, critical: 4 };
 
@@ -75,6 +76,7 @@ function parseArgs(argv) {
     }
   }
   if (!a.baseUrl) die(`--base-url is required\n${HELP}`);
+  if (a.timeout < 1000) die("--timeout must be at least 1000 ms");
   let u;
   try { u = new URL(a.baseUrl); } catch { die("invalid --base-url (not a URL)"); }
   if (!["http:", "https:"].includes(u.protocol)) die("--base-url must be http(s)");
@@ -275,7 +277,8 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
   const base = path.join(a.out, `${slug(route)}__${vp}__${theme}`);
   // Evidence stays in memory until the page can no longer move; it is written to disk only if the page stayed put.
   const pending = {};
-  const t = a.timeout;
+  const t = Math.max(a.timeout, 10000);  // in-page steps: a short --timeout must not turn slow pages into "suspicious"
+  let dropEvidence = false;  // evidence that cannot be vouched for is never written
   try {
     let resp, target = url;
     for (let hop = 0; ; hop++) {
@@ -337,18 +340,21 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
     // evaluate calls (e.g. a getter on scrollWidth) must not leave other-origin evidence behind. A different
     // document object means the page replaced itself (blob: or javascript: navigation) during capture.
     if (!leftOrigin && !sameOrigin(page.mainFrame().url())) leftOrigin = redactUrl(page.mainFrame().url());
-    const sameDoc = await within(page.evaluate((d) => d === document, doc), t, "the document check").catch(() => false);
-    if (!sameDoc) leftOrigin ??= "a navigation during capture";
+    const docState = await within(page.evaluate((d) => d === document, doc), t, "the document check")
+      .then((same) => (same ? "same" : "replaced"), (e) => (/timed out/.test(String(e?.message)) ? "timeout" : "replaced"));
+    if (docState === "replaced") leftOrigin ??= "a navigation during capture";
+    if (docState === "timeout") { dropEvidence = true; throw new Error("the document check timed out: evidence not kept"); }
     assertOnOrigin();
   } catch (e) {
     res.error = leftOrigin ? `page tried to leave the base origin or navigate during capture (${leftOrigin})`
       : plain(String(e?.message ?? e).split("\n")[0]);
-    if (!pending.png && !leftOrigin && sameOrigin(page.mainFrame().url())) {  // evidence of what the page showed
+    if (capturing) dropEvidence = true;  // a failure during capture: what the page shows now cannot be vouched for
+    else if (!pending.png && !leftOrigin && sameOrigin(page.mainFrame().url())) {  // evidence of what the page showed
       try { pending.png = await page.screenshot({ timeout: Math.min(t, 10000) }); } catch {}
     }
   } finally {
-    // Decide what to keep only once the page can no longer move: a rejected evaluate can reach us before the
-    // framenavigated event that says the page left the origin.
+    // Decide what to keep at the very end: a rejected evaluate can reach us before the framenavigated event that
+    // says the page left the origin, and anything arriving during close is still seen below.
     const mainUrl = page.mainFrame().url();
     if (!leftOrigin && mainUrl !== "about:blank" && !mainUrl.startsWith("chrome-error:") && !sameOrigin(mainUrl))
       leftOrigin = redactUrl(mainUrl);
@@ -356,9 +362,12 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
     if (leftOrigin) {
       delete res.axe; delete res.overflow;  // nothing captured from a page that moved is kept
       res.error = `page tried to leave the base origin or navigate during capture (${leftOrigin})`;
-    } else {
-      if (pending.png) { fs.writeFileSync(`${base}.png`, pending.png); res.screenshot = `${base}.png`; }
-      if (pending.aria !== undefined) { fs.writeFileSync(`${base}.aria.yml`, pending.aria); res.aria = `${base}.aria.yml`; }
+    }
+    if (leftOrigin || dropEvidence) { delete pending.png; delete pending.aria; }
+    // Write what is kept; remove same-named files from an earlier run so stale evidence is never mistaken for this one.
+    for (const [file, data, key] of [[`${base}.png`, pending.png, "screenshot"], [`${base}.aria.yml`, pending.aria, "aria"]]) {
+      if (data !== undefined) { fs.writeFileSync(file, data); res[key] = file; }
+      else fs.rmSync(file, { force: true });
     }
     res.consoleErrors = consoleErrors; res.pageErrors = pageErrors; res.failedRequests = failedRequests;
     if (dropped.count) res.droppedEntries = dropped.count;

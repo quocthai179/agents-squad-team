@@ -198,6 +198,7 @@ class UiCheckArgsTest(unittest.TestCase):
         self.assertEqual(self.run_check("--base-url", "http://x", "--viewports", "wide").returncode, 2)
         self.assertEqual(self.run_check("--base-url", "http://x", "--fail-on", "sometimes").returncode, 2)
         self.assertEqual(self.run_check("--base-url", "http://x", "--timeout", "abc").returncode, 2)
+        self.assertEqual(self.run_check("--base-url", "http://x", "--timeout", "0").returncode, 2)
 
     def test_routes_must_stay_on_the_base_origin(self):
         for route in ("file:///etc/passwd", "//evil.example", "/\\evil.example", "javascript:alert(1)", "x", "/a,b c"):
@@ -600,6 +601,35 @@ class UiCheckBrowserTest(unittest.TestCase):
         self.assertEqual(res["/old"].get("redirectedTo"), "/new/dir/page")  # a #fragment route still re-navigates
         self.assertIn(("base", "GET", "/new/dir/app.js", "t"), log)
         self.assertEqual(r.returncode, 1)
+
+    def test_error_during_capture_keeps_no_evidence_and_clears_stale_files(self):
+        html = {"Content-Type": "text/html"}
+        swap_then_throw = (b'<!doctype html><html lang="en"><title>s</title><main><h1>s</h1></main><script>'
+                           b'Object.defineProperty(document.documentElement, "scrollWidth", {get() {'
+                           b'location = URL.createObjectURL(new Blob(["<h1>BLOB-SWAPPED-CONTENT</h1><script src=/never.js></scr"'
+                           b' + "ipt>"], {type: "text/html"})); throw new Error("x"); }})</script></html>')
+
+        def never():
+            time.sleep(20)
+            return b""
+        base, base_url = serve({"/blobcatch": (200, html, swap_then_throw), "/never.js": (200, {}, never)}, [], "base")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out = os.path.join(tmp, "out")
+                os.makedirs(out)
+                for stale in ("blobcatch__375x812__light.png", "blobcatch__375x812__light.aria.yml"):
+                    write(os.path.join(out, stale), "STALE-EVIDENCE")  # from an earlier run in a reused --out
+                r, report, out = self.run_check(base_url, "/blobcatch", "--no-axe", tmp=tmp)
+                leftovers = sorted(os.listdir(out))
+                captured = read_all(out, (".yml", ".md", ".json"))
+        finally:
+            base.shutdown()
+            base.server_close()
+        self.assertEqual(r.returncode, 1)
+        self.assertTrue(report["results"][0].get("error"))
+        self.assertNotIn("BLOB-SWAPPED-CONTENT", captured)
+        self.assertNotIn("STALE-EVIDENCE", captured)
+        self.assertEqual([f for f in leftovers if f.startswith("blobcatch")], [])
 
 if __name__ == "__main__":
     unittest.main()

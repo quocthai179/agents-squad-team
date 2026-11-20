@@ -78,6 +78,12 @@ function parseArgs(argv) {
   let u;
   try { u = new URL(a.baseUrl); } catch { die(`invalid --base-url ${a.baseUrl}`); }
   if (!["http:", "https:"].includes(u.protocol)) die("--base-url must be http(s)");
+  if (u.username || u.password) {  // user:pass@ becomes origin-scoped HTTP credentials, never part of a URL we print
+    a.httpCredentials = { username: decodeURIComponent(u.username), password: decodeURIComponent(u.password), origin: u.origin };
+    u.username = ""; u.password = "";
+  }
+  u.hash = "";
+  a.baseUrl = u.toString();
   a.origin = u.origin;
   for (const r of a.routes) {  // routes are paths on the base origin, never other hosts or file:// URLs
     if (!r.startsWith("/") || r.startsWith("//") || /[\\\s\u0000-\u001f]/.test(r)) die(`route must be a path starting with /: ${r}`);
@@ -111,12 +117,18 @@ function redactUrl(raw) {
     const u = new URL(raw);
     u.username = ""; u.password = "";
     for (const k of [...new Set(u.searchParams.keys())]) u.searchParams.set(k, "*");
+    u.hash = "";
     return u.toString();
   } catch { return String(raw).replace(/[?#].*$/, ""); }
 }
 
-// Page-controlled text goes into report.md as data on one line: no newlines, table pipes or code spans.
-const clean = (t, n = 300) => String(t).replace(/[\r\n\t]+/g, " ").replace(/\|/g, "\\|").replace(/`/g, "'").slice(0, n);
+// Any URL inside free text (error messages, console output) is redacted the same way.
+const redactText = (t) => String(t).replace(/\b[a-z][\w+.-]*:\/\/[^\s"'<>)]+/gi, (m) => redactUrl(m));
+
+// Page-controlled text goes into report.md as data on one line: no control or invisible characters, table pipes
+// or code spans.
+const clean = (t, n = 300) => redactText(t).replace(/[\p{Cc}\p{Cf}\u2028\u2029]+/gu, " ").replace(/\\/g, "\\\\")
+  .replace(/\|/g, "\\|").replace(/`/g, "'").slice(0, n);
 
 function resolveFrom(name) {
   const bases = [path.join(process.cwd(), "noop.js")];
@@ -147,37 +159,75 @@ async function waitForServer(url, seconds) {
   die(`server at ${redactUrl(url)} did not answer within ${seconds}s (${last}). Is the dev server running?`);
 }
 
-// "/a/b" -> "a_b"; anything that could collide after sanitising ("/a_b", "/x?tab=1") gets a short hash suffix.
+// "/a/b" -> "a_b". Anything that could collide after sanitising ("/a_b", "/About" vs "/about" on case-insensitive
+// disks, "/x?tab=1") gets a short hash suffix; query values never appear in file names.
 function slug(route) {
-  const s = route.replace(/^\/+|\/+$/g, "").replace(/[^A-Za-z0-9.-]+/g, "_") || "root";
-  return /^[A-Za-z0-9/.-]*$/.test(route) ? s : `${s}-${createHash("sha1").update(route).digest("hex").slice(0, 6)}`;
+  const s = route.split(/[?#]/)[0].replace(/^\/+|\/+$/g, "").replace(/[^a-z0-9.-]+/gi, "_").toLowerCase() || "root";
+  return /^[a-z0-9/.-]*$/.test(route) ? s : `${s}-${createHash("sha1").update(route).digest("hex").slice(0, 6)}`;
 }
+
+// Route as shown in reports: the path plus query keys, never query values.
+const showRoute = (route, a) => { const u = new URL(redactUrl(new URL(route, a.baseUrl).toString())); return u.pathname + u.search; };
 
 async function checkPage(browser, a, route, vp, theme, axePath) {
   const [width, height] = vp.split("x").map(Number);
   const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: theme === "dark" && a.darkMode === "media" ? "dark" : "light",
-    reducedMotion: "reduce", ...(a.storageState ? { storageState: a.storageState } : {}) });
+    reducedMotion: "reduce", ...(a.storageState ? { storageState: a.storageState } : {}),
+    ...(a.httpCredentials ? { httpCredentials: a.httpCredentials } : {}) });
   const page = await ctx.newPage();
-  // Never let the top-level page leave the base origin. Auth headers go to the base origin only: those
-  // requests are fetched without following redirects, so a redirect to another host never carries them.
+  const consoleErrors = [], pageErrors = [], failedRequests = [];
+  const sameOrigin = (u) => { try { return new URL(u).origin === a.origin; } catch { return false; } };
+  let leftOrigin = null;  // set when the top-level page tried to go to another origin
+  page.on("framenavigated", (f) => {  // second line of defence: catches anything the route handler did not see
+    if (f === page.mainFrame() && f.url() !== "about:blank" && !f.url().startsWith("chrome-error:") && !sameOrigin(f.url()))
+      leftOrigin ??= redactUrl(f.url());
+  });
+
+  // Without --header the browser loads everything itself; a top-level request to another origin is blocked, and a
+  // redirect hop the browser follows on its own is caught by the framenavigated guard (reported, never captured).
+  // With --header the checker fetches every base-origin request itself and follows redirects: same-origin hops keep
+  // the headers, a top-level hop to another origin is blocked, and a subresource hop to another origin goes back to
+  // the browser without the headers. The browser never holds a header value, so nothing the page does can forward
+  // it. Trade-off: Chromium treats documents served this way as public, so its local-network checks block requests
+  // from them to other loopback/private ports. --header is for preview deployments; use --storage-state locally.
   const hasHeaders = Object.keys(a.headerMap).length > 0;
   await ctx.route("**/*", async (rt) => {
     const req = rt.request();
-    let origin = null;
-    try { origin = new URL(req.url()).origin; } catch {}
-    if (origin !== a.origin) {
-      if (req.isNavigationRequest() && req.frame() === page.mainFrame()) return rt.abort("blockedbyclient");
-      return rt.continue();
+    let top = false, mainTop = false;
+    if (req.isNavigationRequest()) {
+      try { top = req.frame().parentFrame() === null; mainTop = req.frame() === page.mainFrame(); }
+      catch { top = true; }  // a popup whose frame does not exist yet
     }
-    if (!hasHeaders) return rt.continue();
+    const blockTop = async (to) => {
+      if (mainTop) leftOrigin ??= redactUrl(to);
+      else failedRequests.push({ url: redactUrl(to).slice(0, 200), error: "blocked: popup to another origin" });
+      await rt.abort("blockedbyclient");
+    };
     try {
-      const resp = await rt.fetch({ headers: { ...req.headers(), ...a.headerMap }, maxRedirects: 0 });
-      return rt.fulfill({ response: resp });
-    } catch { return rt.abort(); }
+      if (!sameOrigin(req.url())) return top ? await blockTop(req.url()) : await rt.continue();
+      if (!hasHeaders) return await rt.continue();
+      let target = req.url(), method = req.method(), postData = req.postDataBuffer() ?? undefined, resp;
+      for (let hop = 0; hop < 10; hop++) {
+        resp = await rt.fetch({ url: target, method, postData, headers: { ...req.headers(), ...a.headerMap }, maxRedirects: 0 });
+        const loc = resp.status() >= 300 && resp.status() < 400 ? resp.headers()["location"] : null;
+        if (!loc) break;
+        const next = new URL(loc, target).toString();
+        if (!sameOrigin(next)) {
+          if (top) return await blockTop(next);
+          break;  // hand the 3xx to the browser: it follows it without our headers
+        }
+        if ([301, 302, 303].includes(resp.status()) && !["GET", "HEAD"].includes(method)) { method = "GET"; postData = undefined; }
+        target = next;
+      }
+      return await rt.fulfill({ response: resp });
+    } catch (e) {
+      failedRequests.push({ url: redactUrl(req.url()).slice(0, 200), error: `checker could not fetch: ${redactText(String(e.message || e).split("\n")[0]).slice(0, 120)}` });
+      try { await rt.abort(); } catch {}
+    }
   });
-  const consoleErrors = [], pageErrors = [], failedRequests = [];
-  page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text().slice(0, 300)); });
-  page.on("pageerror", (e) => pageErrors.push(String(e.message || e).slice(0, 300)));
+  const assertOnOrigin = () => { if (leftOrigin) throw new Error(`page tried to leave the base origin (to ${leftOrigin})`); };
+  page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(redactText(m.text()).slice(0, 300)); });
+  page.on("pageerror", (e) => pageErrors.push(redactText(String(e.message || e)).slice(0, 300)));
   page.on("requestfailed", (r) => {
     const error = r.failure()?.errorText || "failed";
     if (error.includes("ERR_ABORTED") && !r.isNavigationRequest()) return;  // cancelled by the page itself, not a failure
@@ -186,16 +236,17 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
   page.on("response", (r) => { if (r.status() >= 400) failedRequests.push({ url: redactUrl(r.url()).slice(0, 200), status: r.status() }); });
 
   const url = new URL(route, a.baseUrl).toString();
-  const res = { route, viewport: vp, theme, url: redactUrl(url), status: null };
+  const res = { route: showRoute(route, a), viewport: vp, theme, url: redactUrl(url), status: null };
   const base = path.join(a.out, `${slug(route)}__${vp}__${theme}`);
   try {
     const resp = await page.goto(url, { waitUntil: "load", timeout: a.timeout });
     res.status = resp?.status() ?? null;
-    if (new URL(page.url()).origin !== a.origin) throw new Error(`page left the base origin (now ${redactUrl(page.url())})`);
+    assertOnOrigin();
     try { await page.waitForLoadState("networkidle", { timeout: 5000 }); } catch {}
     if (a.waitFor) await page.waitForSelector(a.waitFor, { timeout: a.timeout });
     if (theme === "dark" && a.darkMode === "class") await page.evaluate(() => document.documentElement.classList.add("dark"));
     if (a.settleMs) await page.waitForTimeout(a.settleMs);
+    assertOnOrigin();
 
     res.overflow = await page.evaluate(() => {
       const de = document.documentElement, vw = de.clientWidth;
@@ -213,6 +264,7 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
       return { scrollWidth: de.scrollWidth, viewportWidth: vw, culprits };
     });
 
+    assertOnOrigin();
     await page.screenshot({ path: `${base}.png`, fullPage: !!a.fullPage });
     res.screenshot = `${base}.png`;
     if (a.aria) {
@@ -224,13 +276,19 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
         await page.addScriptTag({ path: axePath });
         const r = await page.evaluate(async () => window.axe.run(document, { runOnly: { type: "tag",
           values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"] } }));
-        res.axe = r.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, helpUrl: v.helpUrl, nodes: v.nodes.length,
-          targets: v.nodes.slice(0, 3).map((n) => n.target.join(" ")) }));
-      } catch (e) { res.axeError = String(e.message || e).split("\n")[0].slice(0, 200); }  // e.g. a CSP blocks the script
+        assertOnOrigin();
+      // The page could have replaced window.axe: keep only well-formed fields.
+      res.axe = (Array.isArray(r?.violations) ? r.violations : []).map((v) => ({
+        id: clean(v.id, 80), impact: IMPACT[v.impact] ? v.impact : "unknown", help: clean(v.help, 200),
+        helpUrl: /^https:\/\/dequeuniversity\.com\/[\w./?=&%-]*$/.test(String(v.helpUrl)) ? v.helpUrl : "",
+        nodes: Array.isArray(v.nodes) ? v.nodes.length : 0,
+        targets: (Array.isArray(v.nodes) ? v.nodes : []).slice(0, 3).map((n) => clean([].concat(n?.target ?? []).join(" "), 200)) }));
+      } catch (e) { res.axeError = redactText(String(e.message || e).split("\n")[0]).slice(0, 200); }  // e.g. a CSP blocks the script
     }
   } catch (e) {
-    res.error = String(e.message || e).split("\n")[0].slice(0, 300);
-    if (!res.screenshot) {  // keep visual evidence of what the page showed when it failed
+    res.error = leftOrigin ? `page tried to leave the base origin (to ${leftOrigin})`
+      : redactText(String(e.message || e).split("\n")[0]).slice(0, 300);
+    if (!res.screenshot && !leftOrigin) {  // never capture another origin's content  // keep visual evidence of what the page showed when it failed
       try { await page.screenshot({ path: `${base}.png` }); res.screenshot = `${base}.png`; } catch {}
     }
   } finally {
@@ -261,7 +319,7 @@ function toMarkdown(a, results, verdict) {
     for (const e of [...r.pageErrors, ...r.consoleErrors]) items.push(`- console/page error: ${clean(e)}`);
     for (const f of r.failedRequests) items.push(`- failed request: ${f.status ?? clean(f.error)} ${clean(f.url)}`);
     if (r.overflow) items.push(`- horizontal overflow: ${clean(r.overflow.culprits.join(", ") || "(no single culprit found)", 600)}`);
-    for (const v of r.axe || []) items.push(`- a11y ${v.impact}: ${v.id} — ${clean(v.help)} (${v.nodes} node(s): ${clean(v.targets.join(" ; "))}) ${v.helpUrl}`);
+    for (const v of r.axe || []) items.push(`- a11y ${v.impact}: ${v.id} — ${v.help} (${v.nodes} node(s): ${v.targets.join(" ; ")}) ${v.helpUrl}`);
     if (items.length) details.push(`### ${clean(r.route)} @ ${r.viewport} ${r.theme}`, ...items, "");
   }
   return [...L, "", "## Details", "",
@@ -271,9 +329,11 @@ function toMarkdown(a, results, verdict) {
 
 async function main() {
   const a = parseArgs(process.argv.slice(2));
+  const fresh = !fs.existsSync(a.out);
   fs.mkdirSync(a.out, { recursive: true });
-  const ignore = path.join(a.out, ".gitignore");  // screenshots can show personal data: never commit them by accident
-  if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, "*\n");
+  // Screenshots can show personal data: a directory this run created ignores itself in git. An existing directory
+  // (which may hold files people do commit) is left alone.
+  if (fresh) fs.writeFileSync(path.join(a.out, ".gitignore"), "*\n");
   await waitForServer(a.baseUrl, a.waitServer);
   let axePath = null;
   if (a.axe) {

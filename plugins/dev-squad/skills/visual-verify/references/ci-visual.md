@@ -57,9 +57,9 @@ visual:            # under jobs:
   runs-on: ubuntu-latest
   permissions:
     contents: read
-  container: mcr.microsoft.com/playwright:v1.49.0-noble   # match @playwright/test
+  container: mcr.microsoft.com/playwright:v1.49.0-noble   # match @playwright/test; pin by @sha256 in real use
   steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v4          # pin to a commit SHA in real use
     - run: npm ci
     - run: npm run build
     - run: npx playwright test e2e/visual.spec.ts

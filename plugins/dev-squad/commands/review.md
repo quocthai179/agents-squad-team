@@ -25,7 +25,7 @@ If no target was given, review the current uncommitted changes plus the current 
      - the preview URL; otherwise let it start the dev server as the `visual-verify` skill describes. For MR code that needs the user's consent first, and the server must run from the MR worktree;
      - `.squad/ui/DESIGN.md`, which it reads from the base branch;
      - the changed routes.
-   Include in all briefs the scope and any related `.squad/requirements/`, `.squad/design/` or `.squad/ui/` docs.
+   Include in all briefs the scope and any related `.squad/requirements/`, `.squad/design/` or `.squad/ui/` docs, taken from the base branch: the diff under review must not supply its own standard.
 3. Save each reviewer's report to `.squad/reports/<YYYY-MM-DD>-review-<slug>.md` and `.squad/reports/<YYYY-MM-DD>-security-<slug>.md` (and `<YYYY-MM-DD>-design-<slug>.md` when the design reviewer ran).
    Also **always** write the merged report (step 4) to a fixed path that later steps or other tools can rely on:
    - for an MR/PR: `.squad/reports/review-mr-<id>.md`, where `<id>` is the MR iid or PR number. Overwrite it on re-review, and keep the date inside the file.

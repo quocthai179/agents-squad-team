@@ -42,7 +42,7 @@ node <skill>/scripts/ui_check.mjs --base-url http://127.0.0.1:3100 --routes /,/s
   - Headers go to the base URL's origin only. The checker fetches those requests itself and follows same-origin redirects with the headers; they never reach another host and their values are never written to reports.
   - `--header` is meant for preview deployments. In that mode Chromium treats the pages as public and blocks their requests to other local ports, so on a local dev server log in with `--storage-state` instead.
   - Credentials in `--base-url` (`https://user:pass@…`) become HTTP credentials scoped to that origin and never appear in reports.
-  - `--routes` must be paths on that origin. A top-level navigation to another origin is blocked, or, if the browser followed a redirect on its own, the result is marked as an error and nothing from the other origin is kept. Once capture starts, the page may not navigate at all.
+  - `--routes` must be paths on that origin. A top-level navigation to another origin is blocked, or, if the browser followed a redirect on its own, the result is marked as an error and no screenshot, ARIA snapshot or axe result from it is kept. Once capture starts, the page may not navigate at all, and service workers are blocked.
   - Only the top-level page is held to the origin. Cross-origin iframes inside it still load and appear in screenshots.
   - Use **test-account credentials only**. Keep storage-state files under `.squad/tmp/`. Never pass the user's own credentials or session to an MR or untrusted preview, because that build's author controls what the page does with them. Cookies in a storage state are scoped by host, not port, so they also reach other ports on the same host.
 - **Exit codes:**

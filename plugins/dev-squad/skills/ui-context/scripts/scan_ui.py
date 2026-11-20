@@ -69,9 +69,14 @@ NEXT_FONT = re.compile(r"import\s*\{([^}]+)\}\s*from\s*['\"]next/font/(google|lo
 NEXT_FONT_DEFAULT = re.compile(r"import\s+([A-Za-z_$][\w$]*)\s+from\s*['\"]next/font/local['\"]")
 TW_KEYS = {"colors", "spacing", "fontFamily", "fontSize", "borderRadius", "boxShadow", "screens", "extend", "animation",
            "keyframes", "container", "zIndex"}
+# Default-ignorable code points outside Cc/Cf (fillers, variation selectors): invisible to people, not to models.
+IGNORABLE_EXTRA = {0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x180B, 0x180C, 0x180D, 0x180E, 0x180F, 0x3164, 0xFFA0}
 SAFE_SEGMENT = re.compile(r"^(?!\.+$)[A-Za-z0-9._~\-\[\]]+$")  # never "." or ".."
-# A version range or a known specifier: ASCII only, and it must contain a digit unless it is a bare tag.
-SAFE_VERSION = re.compile(r"^(?=.*\d)[\w.^~<>=|*@:/ -]{1,40}$|^(\*|latest|next|workspace:\*)$", re.ASCII)
+# A semver range (must contain a digit), a known protocol specifier, or a dist-tag. ASCII only; checked with
+# fullmatch so a trailing newline cannot slip through. Anything else is shown as "?".
+SAFE_VERSION = re.compile(r"(?=.*\d)[\w.^~<>=|*@:/ -]{1,40}"
+                          r"|(?:workspace|catalog|link|file|github|gitlab|npm|git\+https?|git\+ssh|https?):[\w.^~*@:/#=-]{0,60}"
+                          r"|\*|[a-z][a-z0-9-]{0,19}", re.ASCII)
 
 
 def walk(root, max_depth=8):
@@ -112,7 +117,8 @@ def code(value, limit=200):
 
 def visible(value):
     """One line without control, format (bidi, zero-width, tag) or line/paragraph separator characters."""
-    return "".join(" " if unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") else c for c in str(value)[:2000])
+    return "".join(" " if unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") or ord(c) in IGNORABLE_EXTRA
+                   or 0xFE00 <= ord(c) <= 0xFE0F or 0xE0000 <= ord(c) <= 0xE0FFF else c for c in str(value)[:2000])
 
 
 def cell(value, limit=80):
@@ -181,7 +187,7 @@ def pick(deps, table):
     for key, label in table.items():
         if key in deps and label not in out:
             version = str(deps.get(key) or "")
-            version = version if SAFE_VERSION.match(version) else ("?" if version else "")
+            version = version if SAFE_VERSION.fullmatch(version) else ("?" if version else "")
             out.append(f"{label} ({version})" if version else label)
     return out
 

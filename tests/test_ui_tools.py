@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -145,6 +146,7 @@ class ScanUiTest(unittest.TestCase):
         self.assertNotIn("<img", r.stdout)
         self.assertIn("Next.js (?)", r.stdout)
         self.assertIn("React (^19.0.0)", r.stdout)
+        self.assertNotIn("Lucide (", r.stdout.replace("Lucide (?)", ""))  # "<img…>" is not a version
         self.assertIn("red \\\\\\| x", r.stdout)  # backslash escaped before the pipe: still one table cell
 
     def test_hoisted_root_does_not_hide_apps(self):
@@ -497,12 +499,65 @@ class UiCheckBrowserTest(unittest.TestCase):
         res = {x["route"]: x for x in report["results"]}
         self.assertIn(("base", "GET", "/new/dir/app.js", "t0k"), log)  # relative URL resolved against the real page
         self.assertEqual(res["/old"].get("redirectedTo"), "/new/dir/page")
+        self.assertEqual([f for f in res["/old"]["failedRequests"] if "/old" in f["url"]], [])  # own abort is not a failure
         self.assertIsNone(res["/old"].get("error"))
         self.assertTrue(res["/loop/0"].get("error"))  # bounded, never handed to the browser without the header
         self.assertLess(len([x for x in log if x[2].startswith("/loop/")]), 40)
         self.assertEqual([x for x in log if x[2].startswith("/loop/") and x[3] != "t0k"], [])
         self.assertEqual(len([f for f in shots if f.startswith("root")]), 2)  # "/" and "/root" do not overwrite
         self.assertEqual(r.returncode, 1)
+
+    def test_failure_path_keeps_nothing_from_another_origin(self):
+        other, other_url = serve({"/landing": (200, {"Content-Type": "text/html"},
+                                               b"<!doctype html><title>o</title><h1>OTHER-ORIGIN-CONTENT</h1>")}, [], "other")
+
+        def slow_redirect():
+            time.sleep(5.5)
+            return b""
+        page = (b'<!doctype html><html lang="en"><title>t</title><main><h1>x</h1></main>'
+                b'<script>setTimeout(() => { location = "/slowredir" }, 100)</script></html>')
+        base, base_url = serve({"/": (200, {"Content-Type": "text/html"}, page),
+                                "/slowredir": (302, {"Location": lambda: f"{other_url}/landing"}, slow_redirect)}, [], "base")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                r, report, out = self.run_check(base_url, "/", "--no-axe", tmp=tmp)
+                captured = read_all(out, (".yml", ".md", ".json"))
+                shots = [f for f in os.listdir(out) if f.endswith(".png")]
+        finally:
+            for srv in (base, other):
+                srv.shutdown()
+                srv.server_close()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("leave the base origin", report["results"][0]["error"])
+        self.assertNotIn("OTHER-ORIGIN-CONTENT", captured)
+        self.assertEqual(shots, [])
+
+    def test_page_initiated_redirect_cannot_mask_a_failed_load(self):
+        def hang():
+            time.sleep(8)
+            return b"void 0"
+        html = {"Content-Type": "text/html"}
+        page = (b'<!doctype html><html lang="en"><title>t</title><main><h1>x</h1></main>'
+                b'<script>setTimeout(() => { location.href = "/old" }, 300)</script><script src="/hang.js"></script></html>')
+        noisy = (b'<!doctype html><html lang="en"><title>n</title><main><h1>n</h1></main>'
+                 b'<script>for (let i = 0; i < 500; i++) console.error("e" + i)</script></html>')
+        base, base_url = serve({"/": (200, html, page), "/hang.js": (200, {"Content-Type": "text/javascript"}, hang),
+                                "/old": (302, {"Location": "/new"}, b""), "/new": (200, html, b"<!doctype html><title>n</title>"),
+                                "/noisy": (200, html, noisy)}, [], "base")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                r, report, _ = self.run_check(base_url, "/,/noisy", "--no-axe", "--no-aria", "--timeout", "3000",
+                                              "--header", "X-Preview-Token: t", tmp=tmp)
+        finally:
+            base.shutdown()
+            base.server_close()
+        res = {x["route"]: x for x in report["results"]}
+        # A redirect the page starts itself is the page's behaviour, not goto's: the checker must not swap in its own
+        # re-navigation (it used to abort it, time out on the hanging page, then "succeed" on /new).
+        self.assertIsNone(res["/"].get("redirectedTo"))
+        self.assertEqual(len(res["/noisy"]["consoleErrors"]), 50)
+        self.assertEqual(res["/noisy"]["droppedEntries"], 450)
+        self.assertEqual(r.returncode, 0, r.stdout)  # console errors fail only with --fail-on-console
 
 if __name__ == "__main__":
     unittest.main()

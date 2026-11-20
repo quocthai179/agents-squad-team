@@ -126,8 +126,8 @@ function redactUrl(raw) {
 // Page-controlled text: truncated FIRST (so no regex ever sees a huge string), URLs inside it redacted, control
 // and invisible characters removed. This is what report.json stores.
 const plain = (t, n = 300) => String(t ?? "").slice(0, 4000)
-  .replace(/\b[a-z][a-z0-9+.-]{0,31}:\/\/[^\s"'<>)]{1,2048}/gi, (m) => redactUrl(m))
-  .replace(/[\p{Cc}\p{Cf}\u2028\u2029]+/gu, " ").slice(0, n);
+  .replace(/\b[a-z][a-z0-9+.-]{0,31}:\/\/[^\s"'<>)]{1,4000}/gi, (m) => redactUrl(m))
+  .replace(/[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}\u2028\u2029]+/gu, " ").slice(0, n);
 const redactText = (t) => plain(t, 4000);
 
 // The same text as inert Markdown for report.md: no table breaks, code spans, HTML, links or images.
@@ -178,14 +178,18 @@ const showRoute = (route, a) => { const u = new URL(redactUrl(new URL(route, a.b
 async function checkPage(browser, a, route, vp, theme, axePath) {
   const [width, height] = vp.split("x").map(Number);
   const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: theme === "dark" && a.darkMode === "media" ? "dark" : "light",
-    reducedMotion: "reduce", ...(a.storageState ? { storageState: a.storageState } : {}),
+    reducedMotion: "reduce", serviceWorkers: "block",  // service-worker responses would bypass the route handler
+    ...(a.storageState ? { storageState: a.storageState } : {}),
     ...(a.httpCredentials ? { httpCredentials: a.httpCredentials } : {}) });
   const page = await ctx.newPage();
-  const consoleErrors = [], pageErrors = [], failedRequests = [];
+  const consoleErrors = [], pageErrors = [], failedRequests = [], dropped = { count: 0 };
+  const note = (list, item) => { if (list.length < 50) list.push(item); else dropped.count++; };  // a noisy page cannot flood the report
+  const ownAborts = new WeakSet();  // requests the checker aborted itself to re-navigate: not failures
   const sameOrigin = (u) => { try { return new URL(u).origin === a.origin; } catch { return false; } };
   let leftOrigin = null;  // set when the top-level page tried to go to another origin
   let capturing = false;  // once evidence capture starts, the top-level page may not navigate at all
-  let navigating = false, pendingNav = null;  // --header mode: same-origin top-level redirects are re-navigated
+  let gotoTarget = null, pendingNav = null;  // --header mode: a redirect of goto's own request is re-navigated
+  page.on("domcontentloaded", () => { if (capturing) leftOrigin ??= "a navigation during capture"; });  // not fired by pushState
   page.on("framenavigated", (f) => {  // second line of defence: catches anything the route handler did not see
     if (f === page.mainFrame() && f.url() !== "about:blank" && !f.url().startsWith("chrome-error:") && !sameOrigin(f.url()))
       leftOrigin ??= redactUrl(f.url());
@@ -208,7 +212,7 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
     }
     const blockTop = async (to) => {
       if (mainTop) leftOrigin ??= redactUrl(to);
-      else failedRequests.push({ url: redactUrl(to).slice(0, 200), error: "blocked: popup to another origin" });
+      else note(failedRequests, { url: redactUrl(to).slice(0, 200), error: "blocked: popup to another origin" });
       await rt.abort("blockedbyclient");
     };
     try {
@@ -230,8 +234,9 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
           if (top) return await blockTop(next);
           break;  // hand the 3xx to the browser: it follows it without our headers
         }
-        if (mainTop && navigating) {  // let goto load the target itself, so the page gets the right URL
-          pendingNav = next;
+        if (mainTop && req.url() === gotoTarget && !req.redirectedFrom()) {  // goto's own request: load the target
+          pendingNav = next;                                                 // itself, so the page gets the right URL
+          ownAborts.add(req);
           return await rt.abort("aborted");
         }
         if ([301, 302, 303].includes(resp.status()) && !["GET", "HEAD"].includes(method)) {
@@ -242,19 +247,19 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
       }
       return await rt.fulfill({ response: resp });
     } catch (e) {
-      failedRequests.push({ url: redactUrl(req.url()).slice(0, 200), error: `checker could not fetch: ${redactText(String(e.message || e).split("\n")[0]).slice(0, 120)}` });
+      note(failedRequests, { url: redactUrl(req.url()).slice(0, 200), error: `checker could not fetch: ${plain(String(e?.message ?? e).split("\n")[0], 120)}` });
       try { await rt.abort(); } catch {}
     }
   });
   const assertOnOrigin = () => { if (leftOrigin) throw new Error(`page tried to leave the base origin (to ${leftOrigin})`); };
-  page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(plain(m.text())); });
-  page.on("pageerror", (e) => pageErrors.push(plain(e?.message ?? e)));
+  page.on("console", (m) => { if (m.type() === "error") note(consoleErrors, plain(m.text())); });
+  page.on("pageerror", (e) => note(pageErrors, plain(e?.message ?? e)));
   page.on("requestfailed", (r) => {
     const error = r.failure()?.errorText || "failed";
-    if (error.includes("ERR_ABORTED") && !r.isNavigationRequest()) return;  // cancelled by the page itself, not a failure
-    failedRequests.push({ url: redactUrl(r.url()).slice(0, 200), error });
+    if (ownAborts.has(r) || (error.includes("ERR_ABORTED") && !r.isNavigationRequest())) return;  // not a page failure
+    note(failedRequests, { url: redactUrl(r.url()).slice(0, 200), error });
   });
-  page.on("response", (r) => { if (r.status() >= 400) failedRequests.push({ url: redactUrl(r.url()).slice(0, 200), status: r.status() }); });
+  page.on("response", (r) => { if (r.status() >= 400) note(failedRequests, { url: redactUrl(r.url()).slice(0, 200), status: r.status() }); });
 
   const url = new URL(route, a.baseUrl).toString();
   const res = { route: showRoute(route, a), viewport: vp, theme, url: redactUrl(url), status: null };
@@ -266,15 +271,15 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
   };
   try {
     let resp, target = url;
-    navigating = true;
     for (let hop = 0; ; hop++) {
+      gotoTarget = target; pendingNav = null;
       try { resp = await page.goto(target, { waitUntil: "load", timeout: a.timeout }); break; }
       catch (e) {
-        if (!pendingNav || hop >= 10) throw e;
-        target = pendingNav; pendingNav = null;
+        if (!pendingNav || hop >= 10) throw e;  // only a redirect of goto's own request is followed
+        target = pendingNav;
       }
     }
-    navigating = false;
+    gotoTarget = null; pendingNav = null;
     res.status = resp?.status() ?? null;
     if (target !== url) res.redirectedTo = showRoute(new URL(target).pathname + new URL(target).search, a);
     assertOnOrigin();
@@ -327,13 +332,22 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
   } catch (e) {
     res.error = leftOrigin ? `page tried to leave the base origin or navigate during capture (${leftOrigin})`
       : plain(String(e?.message ?? e).split("\n")[0]);
-    if (leftOrigin) discardCapture();  // never keep another origin's content
-    else if (!res.screenshot) {  // keep visual evidence of what the page showed when it failed
+    if (!res.screenshot && !leftOrigin && sameOrigin(page.mainFrame().url())) {  // evidence of what the page showed
       try { await page.screenshot({ path: `${base}.png` }); res.screenshot = `${base}.png`; } catch {}
     }
   } finally {
-    res.consoleErrors = consoleErrors; res.pageErrors = pageErrors; res.failedRequests = failedRequests;
+    // Decide what to keep only once the page can no longer move: a rejected evaluate can reach us before the
+    // framenavigated event that says the page left the origin.
+    const mainUrl = page.mainFrame().url();
+    if (!leftOrigin && mainUrl !== "about:blank" && !mainUrl.startsWith("chrome-error:") && !sameOrigin(mainUrl))
+      leftOrigin = redactUrl(mainUrl);
     await ctx.close();
+    if (leftOrigin) {
+      discardCapture();
+      res.error = `page tried to leave the base origin or navigate during capture (${leftOrigin})`;
+    }
+    res.consoleErrors = consoleErrors; res.pageErrors = pageErrors; res.failedRequests = failedRequests;
+    if (dropped.count) res.droppedEntries = dropped.count;
   }
   return res;
 }
@@ -357,6 +371,7 @@ function toMarkdown(a, results, verdict) {
     if (r.status >= 400) items.push(`- page answered HTTP ${r.status}`);
     if (r.axeError) items.push(`- accessibility scan failed: ${clean(r.axeError)}`);
     if (r.redirectedTo) items.push(`- redirected to ${clean(r.redirectedTo)}`);
+    if (r.droppedEntries) items.push(`- ${r.droppedEntries} more console/request entries not listed`);
     for (const e of [...r.pageErrors, ...r.consoleErrors]) items.push(`- console/page error: ${clean(e)}`);
     for (const f of r.failedRequests) items.push(`- failed request: ${f.status ?? clean(f.error)} ${clean(f.url)}`);
     if (r.overflow) items.push(`- horizontal overflow: ${clean(r.overflow.culprits.join(", ") || "(no single culprit found)", 600)}`);

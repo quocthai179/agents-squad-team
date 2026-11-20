@@ -6,7 +6,7 @@ Claude Code plugin marketplace. The plugin source is `plugins/dev-squad/`: agent
 
 - **Review gate before any push or MR.** This is a main-session rule, defined in `plugins/dev-squad/skills/squad-playbook/SKILL.md`. Before any `git push` (branch or tag) and before opening or updating an MR/PR:
   1. Run `/dev-squad:review` on the diff against `main`.
-  2. Fix every blocking finding, or get the user's explicit decision to defer it. Blocking means code-reviewer 🔴 plus security Critical/High.
+  2. Fix every blocking finding, or get the user's explicit decision to defer it. Blocking means code-reviewer 🔴, security Critical/High, and design-reviewer Blocker/High.
   3. Show the READY TO PUSH / NOT READY decision and ask the user to confirm.
   4. Push or open the MR only after confirmation. Re-run the review if the code changed afterwards.
 

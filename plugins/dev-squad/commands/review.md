@@ -21,9 +21,9 @@ If no target was given, review the current uncommitted changes plus the current 
 2. Launch in parallel with the Agent tool:
    - `dev-squad:code-reviewer` — correctness, compatibility, performance, tests, maintainability.
    - `dev-squad:security-auditor` — vulnerabilities, secrets, access control, dependencies.
-   - `dev-squad:design-reviewer`, **when the diff touches UI**. That means files such as `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, Angular `*.component.{ts,html}`, `*.css`, `*.scss`, Tailwind config, or anything under `components/`, `app/`, `pages/` or `src/ui`. Give it:
-     - the preview URL; otherwise let it start the dev server as the `visual-verify` skill describes, which for MR code needs the user's consent first;
-     - `.squad/ui/DESIGN.md`;
+   - `dev-squad:design-reviewer`, **when the diff touches UI**. That means files such as `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, Angular `*.component.{ts,html}`, `*.css`, `*.scss`, Tailwind config, or anything under `components/`, `app/`, `pages/`, `src/ui` or `.squad/ui/`. Give it:
+     - the preview URL; otherwise let it start the dev server as the `visual-verify` skill describes. For MR code that needs the user's consent first, and the server must run from the MR worktree;
+     - `.squad/ui/DESIGN.md`, which it reads from the base branch;
      - the changed routes.
    Include in all briefs the scope and any related `.squad/requirements/`, `.squad/design/` or `.squad/ui/` docs.
 3. Save each reviewer's report to `.squad/reports/<YYYY-MM-DD>-review-<slug>.md` and `.squad/reports/<YYYY-MM-DD>-security-<slug>.md` (and `<YYYY-MM-DD>-design-<slug>.md` when the design reviewer ran).

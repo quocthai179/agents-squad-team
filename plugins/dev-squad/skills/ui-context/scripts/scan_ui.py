@@ -57,12 +57,20 @@ COMPONENT_DIRS = ["components/ui", "src/components/ui", "components", "src/compo
                   "src/app/components", "src/lib/components", "lib/components", "src/shared/components", "src/app/shared"]
 COMPONENT_EXT = (".tsx", ".jsx", ".vue", ".svelte", ".ts")
 CSS_EXT = (".css", ".scss", ".sass", ".less", ".pcss")
-CSS_VAR = re.compile(r"(--[A-Za-z0-9_-]+)\s*:\s*([^;{}]+);")
+# Values are bounded and stop at a newline so hostile CSS cannot make the scan quadratic; the last
+# declaration of a block may omit its ";".
+CSS_VAR = re.compile(r"(--[A-Za-z0-9_-]+)\s*:\s*([^;{}\n]{1,200})(?:;|$)", re.M)
+CSS_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 BLOCK = re.compile(r"(:root|\.dark|\[data-theme[^\]]*\]|html\.dark|@theme(?:\s+inline)?)\s*\{([^{}]*)\}", re.S)
+DARK_MEDIA = re.compile(r"@media[^{]*prefers-color-scheme\s*:\s*dark[^{]*\{")
 NEXT_FONT = re.compile(r"import\s*\{([^}]+)\}\s*from\s*['\"]next/font/(google|local)['\"]")
+NEXT_FONT_DEFAULT = re.compile(r"import\s+([A-Za-z_$][\w$]*)\s+from\s*['\"]next/font/local['\"]")
+TW_KEYS = {"colors", "spacing", "fontFamily", "fontSize", "borderRadius", "boxShadow", "screens", "extend", "animation",
+           "keyframes", "container", "zIndex"}
+SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9._~\-\[\]]+$")
 
 
-def walk(root, max_depth=6):
+def walk(root, max_depth=8):
     root_depth = root.rstrip(os.sep).count(os.sep)
     for d, dirs, files in os.walk(root):
         dirs[:] = [x for x in dirs if x not in SKIP_DIRS and not x.startswith(".") or x == ".storybook"]
@@ -92,6 +100,56 @@ def load_pkg(app):
     return {"name": pkg.get("name"), "scripts": pkg.get("scripts") or {}, "deps": deps}
 
 
+def code(value, limit=200):
+    """Render repo-controlled text as one inline code span that cannot break out of the Markdown."""
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(value)).replace("`", "'").replace("|", "\\|")[:limit]
+    return f"`{text}`"
+
+
+def cell(value, limit=80):
+    return re.sub(r"[\x00-\x1f\x7f]+", " ", str(value)).replace("|", "\\|").replace("`", "'")[:limit]
+
+
+def dark_spans(css):
+    """(start, end) of every @media (prefers-color-scheme: dark) { ... } block."""
+    spans = []
+    for m in DARK_MEDIA.finditer(css):
+        depth, i = 1, m.end()
+        while i < len(css) and depth:
+            depth += {"{": 1, "}": -1}.get(css[i], 0)
+            i += 1
+        spans.append((m.start(), i))
+    return spans
+
+
+def token_scope(selector, in_dark_media):
+    if selector.startswith("@theme"):
+        return "@theme"
+    if "[data-theme" in selector:
+        value = re.search(r"data-theme\s*=\s*[\"']?([\w-]+)", selector)
+        value = value.group(1) if value else ""
+        if value == "dark":
+            return "dark"
+        return "root" if value in ("", "light") else None  # other named themes are not light/dark: skip
+    if "dark" in selector or in_dark_media:
+        return "dark"
+    return "root"
+
+
+def route_from(segments):
+    """Turn file-system route segments into a URL path; None if a segment is unsafe to pass to ui_check."""
+    out = []
+    for seg in segments:
+        if not seg or (seg.startswith("(") and seg.endswith(")")) or seg.startswith("@"):  # groups, parallel slots
+            continue
+        if seg.startswith("("):  # intercepting routes: (.)photo, (..)photo
+            seg = re.sub(r"^(\(\.{1,3}\))+", "", seg)
+        if not SAFE_SEGMENT.match(seg):
+            return None
+        out.append(seg)
+    return "/" + "/".join(out)
+
+
 def frontend_candidates(root):
     found = []
     for d, files in walk(root, max_depth=4):
@@ -107,8 +165,7 @@ def frontend_candidates(root):
 def pick(deps, table):
     out = []
     for key, label in table.items():
-        hit = key in deps or (key.endswith("/") and any(d.startswith(key) for d in deps))
-        if hit and label not in out:
+        if key in deps and label not in out:
             out.append(f"{label} ({deps.get(key, '')})" if deps.get(key) else label)
     return out
 
@@ -153,49 +210,55 @@ def scan(app, root):
             p = os.path.join(d, f)
             rel = os.path.normpath(os.path.join(rel_d, f))
             if f.endswith(CSS_EXT):
-                text = read(p)
-                blocks = BLOCK.findall(text)
-                if blocks:
+                text = CSS_COMMENT.sub(" ", read(p))
+                spans = dark_spans(text)
+                found = False
+                for m in BLOCK.finditer(text):
+                    scope = token_scope(m.group(1), any(a <= m.start() < b for a, b in spans))
+                    if scope is None:
+                        continue
+                    found = True
+                    for name, value in CSS_VAR.findall(m.group(2)):
+                        tokens.setdefault(name, {}).setdefault(scope, " ".join(value.split())[:80])  # first definition wins
+                if found:
                     token_files.append(rel)
-                for selector, body in blocks:
-                    scope = "dark" if "dark" in selector or "theme=" in selector else ("@theme" if selector.startswith("@theme") else "root")
-                    for name, value in CSS_VAR.findall(body):
-                        tokens.setdefault(name, {})[scope] = " ".join(value.split())[:80]
             elif re.match(r"tailwind\.config\.(js|cjs|mjs|ts)$", f):
                 text = read(p)
-                keys = sorted(set(re.findall(r"^\s{4,8}([A-Za-z][A-Za-z0-9]*)\s*:", text, re.M)) &
-                              {"colors", "spacing", "fontFamily", "fontSize", "borderRadius", "boxShadow", "screens",
-                               "extend", "animation", "keyframes", "container", "zIndex"})
+                keys = sorted(set(re.findall(r"\b([A-Za-z][A-Za-z0-9]*)\s*:", text)) & TW_KEYS)  # best effort, any layout
                 dm = re.search(r"darkMode\s*:\s*\[?\s*['\"]([a-z]+)['\"]", text)
                 tw_configs.append({"file": rel, "theme_keys": keys, "darkMode": dm.group(1) if dm else None})
                 if dm:
                     dark.append(f"tailwind darkMode: {dm.group(1)}")
             elif f.endswith((".tsx", ".jsx", ".ts", ".js")) and ("layout" in f or "_app" in f or "fonts" in f):
-                for names, kind in NEXT_FONT.findall(read(p)):
+                text = read(p)
+                for names, kind in NEXT_FONT.findall(text):
                     for n in names.split(","):
                         n = n.strip().split(" as ")[0].strip()
                         if n:
                             fonts.append(f"{n} (next/font/{kind}, {rel})")
+                for n in NEXT_FONT_DEFAULT.findall(text):
+                    fonts.append(f"{n} (next/font/local, {rel})")
             # components: files under well-known component dirs
             norm = rel.replace(os.sep, "/")
-            for cd in COMPONENT_DIRS:
-                if norm.startswith(cd + "/") and f.endswith(COMPONENT_EXT) and not re.search(r"\.(test|spec|stories)\.", f) \
-                        and not f.endswith(".d.ts") and f not in ("index.ts", "index.tsx"):
-                    components.append(norm)
-                    break
-            # routes: Next app router, pages router, SvelteKit, Nuxt
-            m = re.match(r"(?:src/)?app/(.*?)/?page\.(tsx|jsx|ts|js|mdx)$", norm) or re.match(r"(?:src/)?app/page\.(tsx|jsx|ts|js)$", norm)
+            is_test = re.search(r"\.(test|spec|stories)\.", f) or f.endswith(".d.ts") or f in ("index.ts", "index.tsx")
+            if f.endswith(".component.ts") and not is_test:  # Angular components live anywhere under src/app
+                components.append(norm)
+            elif f.endswith(COMPONENT_EXT) and not f.endswith(".ts") and not is_test \
+                    and any(norm.startswith(cd + "/") for cd in COMPONENT_DIRS):  # plain .ts here is hooks/utils/types
+                components.append(norm)
+            # routes: Next app router, pages router, SvelteKit
+            m = re.match(r"^(?:src/)?app/(?:(.*)/)?page\.(tsx|jsx|ts|js|mdx)$", norm)
+            r = None
             if m:
-                seg = m.group(1) if m.lastindex and m.lastindex >= 2 else ""
-                seg = "/".join(s for s in seg.split("/") if not (s.startswith("(") and s.endswith(")")))
-                routes.append("/" + seg)
-            m = re.match(r"(?:src/)?pages/(.+)\.(tsx|jsx|vue)$", norm)
+                r = route_from((m.group(1) or "").split("/"))
+            m = re.match(r"^(?:src/)?pages/(.+)\.(tsx|jsx|vue)$", norm)
             if m and not m.group(1).startswith(("_", "api/")):
-                r = "/" + re.sub(r"(^|/)index$", "", m.group(1))
-                routes.append(r or "/")
-            m = re.match(r"src/routes/(.*?)/?\+page\.svelte$", norm)
+                r = route_from(re.sub(r"(^|/)index$", "", m.group(1)).split("/"))
+            m = re.match(r"^src/routes/(?:(.*)/)?\+page\.svelte$", norm)
             if m:
-                routes.append("/" + m.group(1))
+                r = route_from((m.group(1) or "").split("/"))
+            if r:
+                routes.append(r)
     if "next-themes" in deps:
         dark.append("next-themes (class on <html>)")
     if any(scope == "dark" for v in tokens.values() for scope in v):
@@ -217,11 +280,14 @@ def to_markdown(inv):
 
     t = inv["design_tokens"]
     token_rows = "\n".join(
-        f"| `{name}` | {v.get('root', v.get('@theme', ''))} | {v.get('dark', '')} |" for name, v in t["tokens"].items())
+        f"| {code(name, 80)} | {cell(v.get('root', v.get('@theme', '')))} | {cell(v.get('dark', ''))} |"
+        for name, v in t["tokens"].items())
     comps = inv["components"]
     shown = comps[:150]
-    comp_list = "\n".join(f"- `{c}`" for c in shown) + (f"\n- … {len(comps) - len(shown)} more" if len(comps) > len(shown) else "")
-    return f"""# DESIGN.md — UI contract for `{inv['app']}`
+    comp_list = "\n".join(f"- {code(c)}" for c in shown) + (f"\n- … {len(comps) - len(shown)} more" if len(comps) > len(shown) else "")
+    routes = [code(r) + (" (dynamic: use a real value)" if "[" in r else "") for r in inv["routes"][:60]]
+    title = inv["app"] if inv["app"] != "." else (inv["package"] or "this repo")
+    return f"""# DESIGN.md — UI contract for {code(title)}
 
 _Generated by `scan_ui.py`, then curated. Every UI change reads this first. When the code and this file disagree, fix one of them._
 
@@ -232,20 +298,20 @@ _Generated by `scan_ui.py`, then curated. Every UI change reads this first. When
 - Icons: {', '.join(inv['icons']) or '_none detected_'}
 - Other UI libraries: {', '.join(inv['other_ui_libs']) or '_none_'}
 - Tests: {', '.join(inv['testing']) or '_none detected_'} · Storybook: {'yes' if inv['storybook'] else 'no'}
-- Scripts: {', '.join(f'`{k}`: `{v}`' for k, v in inv['scripts'].items()) or '_none_'}
-{('- shadcn config: `' + json.dumps(inv['shadcn']) + '`') if inv['shadcn'] else ''}
+- Scripts (start them with `npm run <name>`, never by pasting the command): {', '.join(f'{code(k)}: {code(v)}' for k, v in inv['scripts'].items()) or '_none_'}
+{('- shadcn config: ' + code(json.dumps(inv['shadcn']), 400)) if inv['shadcn'] else ''}
 
 ## Design tokens (use these; never hard-code colors, spacing or radii)
-Source files: {', '.join(f'`{f}`' for f in t['files']) or '_none found_'} · {t['count']} custom properties.
+Source files: {', '.join(code(f) for f in t['files']) or '_none found_'} · {t['count']} custom properties.
 
 | Token | Light / default | Dark |
 |---|---|---|
 {token_rows or '| _none found_ | | |'}
 
-Tailwind config: {'; '.join(f"`{c['file']}` keys {c['theme_keys']} darkMode={c['darkMode']}" for c in inv['tailwind_config']) or '_none_'}
+Tailwind config: {'; '.join(f"{code(c['file'])} keys {c['theme_keys']} darkMode={cell(c['darkMode'])}" for c in inv['tailwind_config']) or '_none_'}
 
 ## Typography
-{bullet(inv['fonts'], '_no next/font imports found: check global CSS for font-family_')}
+{bullet([cell(f, 200) for f in inv['fonts']], '_no next/font imports found: check global CSS for font-family_')}
 
 ## Dark mode
 {bullet(inv['dark_mode'], '_no dark mode detected_')}
@@ -254,7 +320,7 @@ Tailwind config: {'; '.join(f"`{c['file']}` keys {c['theme_keys']} darkMode={c['
 {comp_list or '_none found in the usual component folders_'}
 
 ## Routes (inputs for `ui_check.mjs --routes`)
-{bullet([f'`{r}`' for r in inv['routes'][:60]], '_none detected_')}
+{bullet(routes, '_none detected_')}
 
 ## Patterns (TODO: fill in from the code)
 - Layout shell and page structure:
@@ -289,7 +355,7 @@ def main():
         app = os.path.join(root, args.app)
     else:
         cands = frontend_candidates(root)
-        if "." in cands or not cands:
+        if not cands:
             app = root
         elif len(cands) == 1:
             app = os.path.join(root, cands[0])

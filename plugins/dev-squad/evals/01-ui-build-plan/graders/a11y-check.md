@@ -1,5 +1,5 @@
 ---
 type: regex
-pattern: 'axe|WCAG'
+pattern: '\baxe\b|axe-core|WCAG'
 flags: i
 ---

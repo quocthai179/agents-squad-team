@@ -247,7 +247,7 @@ Bạn có thể commit `.squad/` để lưu lịch sử planning cho cả team, 
 
 - **Review gate trước mọi lần push hoặc MR** (push branch, push tag, mở hay cập nhật MR/PR):
   1. Chạy `/dev-squad:review`.
-  2. Sửa hết lỗi *blocking* (🔴 từ `code-reviewer`, Critical/High từ `security-auditor`), hoặc bạn xác nhận hoãn từng lỗi.
+  2. Sửa hết lỗi *blocking* (🔴 từ `code-reviewer`, Critical/High từ `security-auditor`, Blocker/High từ `design-reviewer` khi diff chạm UI), hoặc bạn xác nhận hoãn từng lỗi.
   3. `/review` luôn kết thúc bằng **READY TO PUSH** hoặc **NOT READY**. Chỉ push sau khi bạn xác nhận.
 
   Luật được định nghĩa một chỗ trong skill `squad-playbook`, các lệnh workflow trỏ về đó. Mọi agent có quyền Bash đều có luật **không bao giờ tự push**; chỉ session chính push, sau khi bạn xác nhận.
@@ -309,7 +309,7 @@ claude --plugin-dir plugins/dev-squad plugin details dev-squad
 python3 -m unittest discover -s tests
 ```
 
-Test `tests/test_ui_tools.py` chạy Chromium thật nếu máy có Playwright; nếu không có thì tự bỏ qua phần trình duyệt.
+Test `tests/test_ui_tools.py` chạy Chromium thật nếu máy có Playwright (kể cả test chống rò header đăng nhập sang origin khác); nếu không có thì tự bỏ qua phần trình duyệt. CI hiện không cài Chromium nên phần này chỉ chạy trên máy dev: hãy chạy bộ test trên máy có Playwright trước khi push thay đổi `ui_check.mjs`.
 
 **Eval hành vi** (`plugins/dev-squad/evals/`, 5 case): kiểm tra squad giao việc UI cho `ui-engineer` + `design-reviewer`, gate có chặn finding design, không tự nhận "đã xác minh" khi chưa chạy trình duyệt, và **không** kéo agent UI vào việc backend/Kafka. Mỗi lần chạy tốn phí model (khoảng 0,6 USD cho 1 lượt × 5 case × 2 nhánh có/không plugin), nên không chạy trong CI:
 

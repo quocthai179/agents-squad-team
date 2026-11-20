@@ -45,13 +45,18 @@ If the project has Storybook, prefer component-level checks:
 
 ## CI templates
 
-Pin the Playwright image tag to the project's `@playwright/test` version.
+- Start the app in the Playwright config's `webServer` block (`command: "npm run start"`, `url`, `reuseExistingServer: !process.env.CI`), not in CI shell scripts.
+- Pin the Playwright image to the project's `@playwright/test` version. For supply-chain safety, pin by digest (`image@sha256:…`, keeping the tag in a comment) and pin actions to commit SHAs. Dependabot or Renovate can keep them current.
+- Run visual jobs on `pull_request`, never `pull_request_target`: fork code must not run with your secrets.
+- Failure artifacts (traces, screenshots) can contain data. Keep retention short.
 
 **GitHub Actions**
 
 ```yaml
-visual:
+visual:            # under jobs:
   runs-on: ubuntu-latest
+  permissions:
+    contents: read
   container: mcr.microsoft.com/playwright:v1.49.0-noble   # match @playwright/test
   steps:
     - uses: actions/checkout@v4
@@ -62,6 +67,7 @@ visual:
       if: failure()
       with:
         name: playwright-report
+        retention-days: 7
         path: |
           playwright-report/
           test-results/
@@ -78,7 +84,6 @@ visual:
     - npx playwright test e2e/visual.spec.ts
   artifacts:
     when: on_failure
+    expire_in: 7 days
     paths: [playwright-report/, test-results/]
 ```
-
-Start the app in the Playwright config's `webServer` block (`command: "npm run start"`, `url`, `reuseExistingServer: !process.env.CI`), not in CI shell scripts.

@@ -1,4 +1,4 @@
 ---
 type: regex
-pattern: performance-engineer
+pattern: '\bperformance-engineer\b'
 ---

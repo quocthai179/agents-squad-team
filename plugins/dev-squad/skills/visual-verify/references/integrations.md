@@ -6,8 +6,8 @@ Commands change between versions: **check the vendor's current docs before confi
 
 | Integration | Best for | Typical setup | Notes |
 |---|---|---|---|
-| **Playwright MCP** | Interactive flows: click, type, multi-step forms, reproducing a reported UI bug | `claude mcp add playwright -- npx @playwright/mcp@latest` | Prefer `browser_snapshot` (text) over screenshots; one specific task per check |
-| **Chrome DevTools MCP** | Performance traces, Lighthouse, network/console, CPU/network throttling, memory/heap | `claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest`, or its Claude Code plugin | Chromium only; stable 1.0 since 2026-05 |
+| **Playwright MCP** | Interactive flows: click, type, multi-step forms, reproducing a reported UI bug | `claude mcp add playwright -- npx @playwright/mcp@<version>` (pin an exact version, e.g. `0.0.86`; `@latest` runs whatever was published last at every start) | Prefer `browser_snapshot` (text) over screenshots; one specific task per check |
+| **Chrome DevTools MCP** | Performance traces, Lighthouse, network/console, CPU/network throttling, memory/heap | `claude mcp add chrome-devtools -- npx chrome-devtools-mcp@<version>` (pin, e.g. `1.13.0`), or its Claude Code plugin | Chromium only; stable 1.0 since 2026-05 |
 | **Figma MCP (Dev Mode)** | Design-to-code: read frames, variables and tokens; **Code Connect** maps Figma components to your code components | Remote server `https://mcp.figma.com/mcp`, or the desktop app's local Dev Mode server | Needs a paid plan with a Dev Mode seat; check beta status. Map tokens and components first, or output drifts from your design system |
 | **Storybook MCP** | Lets agents read your components, props and stories before writing UI | See storybook.js.org/ai | Most useful when Storybook is the source of truth for components |
 | **Chromatic / Argos** | Hosted visual diffs with review UI across browsers | Their CLI in CI | Paid above free tiers; pixel diffs need deterministic pages |

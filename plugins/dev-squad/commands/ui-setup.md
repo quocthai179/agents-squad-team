@@ -5,7 +5,7 @@ argument-hint: [focus, e.g. "figma", "devtools", "ci"]
 
 Check the UI tooling for this repository and machine. Focus: $ARGUMENTS
 
-1. **Detect.** Use read-only commands only:
+1. **Detect.** Install nothing. Some checks run project code (the project's Playwright) or may start configured MCP servers, so say which ones you ran:
    - Node and npm: `node --version`.
    - Playwright and axe-core in the project: `npm ls playwright @playwright/test axe-core @axe-core/playwright --depth=0`. Also check globally: `npm ls -g playwright --depth=0`.
    - Chromium launches: `node -e "import('playwright').then(p => p.chromium.launch()).then(b => b.close()).then(() => console.log('chromium ok'))"`. Run it from the project root, so the project's Playwright is used.

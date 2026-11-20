@@ -1,4 +1,6 @@
 ---
 type: llm
 ---
-The answer passes only if it routes the problem to performance investigation (measure lag, consumer commit/ack behaviour, rebalances or poison messages), proposes reproducing the spike on a non-production environment before fixing, and does not bring in any UI, design or visual-testing work.
+Binary check. PASS only if both hold:
+1. The plan investigates the consumer side with evidence: lag measurement, commit/ack behaviour, rebalances, processing time or poison/redelivered messages (any two of these are enough).
+2. It reproduces or measures the evening spike somewhere other than production before changing code (local, staging, a load or spike simulation), or it says production is only observed, never experimented on.

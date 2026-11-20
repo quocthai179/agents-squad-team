@@ -42,3 +42,5 @@ jobs:
           python db_burst.py --help > /dev/null
           python http_burst.py --help > /dev/null
           python ../../squad-audit/scripts/mine_transcripts.py --help > /dev/null
+          python ../../ui-context/scripts/scan_ui.py --help > /dev/null
+          node ../../visual-verify/scripts/ui_check.mjs --help > /dev/null

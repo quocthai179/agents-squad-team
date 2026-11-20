@@ -21,16 +21,20 @@ If no target was given, review the current uncommitted changes plus the current 
 2. Launch in parallel with the Agent tool:
    - `dev-squad:code-reviewer` — correctness, compatibility, performance, tests, maintainability.
    - `dev-squad:security-auditor` — vulnerabilities, secrets, access control, dependencies.
-   Include in both briefs the scope and any related `.squad/requirements/` or `.squad/design/` docs.
-3. Save each reviewer's report to `.squad/reports/<YYYY-MM-DD>-review-<slug>.md` and `.squad/reports/<YYYY-MM-DD>-security-<slug>.md`.
+   - `dev-squad:design-reviewer`, **when the diff touches UI**. That means files such as `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, Angular `*.component.{ts,html}`, `*.css`, `*.scss`, Tailwind config, or anything under `components/`, `app/`, `pages/` or `src/ui`. Give it:
+     - the preview URL; otherwise let it start the dev server as the `visual-verify` skill describes, which for MR code needs the user's consent first;
+     - `.squad/ui/DESIGN.md`;
+     - the changed routes.
+   Include in all briefs the scope and any related `.squad/requirements/`, `.squad/design/` or `.squad/ui/` docs.
+3. Save each reviewer's report to `.squad/reports/<YYYY-MM-DD>-review-<slug>.md` and `.squad/reports/<YYYY-MM-DD>-security-<slug>.md` (and `<YYYY-MM-DD>-design-<slug>.md` when the design reviewer ran).
    Also **always** write the merged report (step 4) to a fixed path that later steps or other tools can rely on:
    - for an MR/PR: `.squad/reports/review-mr-<id>.md`, where `<id>` is the MR iid or PR number. Overwrite it on re-review, and keep the date inside the file.
    - otherwise: `.squad/reports/<YYYY-MM-DD>-review-merged-<slug>.md`.
 
    Give the path in the summary, so another step (for example a comment poster) can read it. Any step that publishes the report must show it to the user and get confirmation first.
-4. Merge into one summary for the user: overall verdict, de-duplicated findings ranked by severity with `file:line`, and a suggested fix order. **Blocking** means every `code-reviewer` 🔴 item plus every `security-auditor` finding rated Critical or High. Label them 🔴 in the summary. Show security Medium findings separately; the user decides whether they block.
+4. Merge into one summary for the user: overall verdict, de-duplicated findings ranked by severity with `file:line`, and a suggested fix order. **Blocking** means every `code-reviewer` 🔴 item, plus every `security-auditor` finding rated Critical or High, plus every `design-reviewer` Blocker or High finding. Label them 🔴 in the summary. Show security Medium findings separately; the user decides whether they block.
 5. End with the gate decision, always:
-   - **READY TO PUSH**: no blocking findings, or every blocking finding has been explicitly deferred by the user.
+   - **READY TO PUSH**: no blocking findings, or every blocking finding has been explicitly deferred by the user. If a UI change was reviewed but **not visually verified**, say so next to the decision.
    - **NOT READY**: list the blocking findings to fix first, then re-run the review on the new diff.
 
 This command only reviews. It never modifies source code: it only writes report files under `.squad/reports/`. It never pushes or opens an MR. Offer to hand blocking findings to `dev-squad:developer`, and push only after the user confirms (see the review gate in the `squad-playbook` skill).

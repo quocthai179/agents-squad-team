@@ -1,6 +1,6 @@
 # Agents Squad Team 🧑‍💻🤖
 
-Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **16 agent chuyên biệt** (1 trưởng nhóm điều phối + 15 chuyên gia) và **14 lệnh workflow** giúp bạn đi trọn vòng đời phát triển phần mềm: phân tích yêu cầu → thiết kế → chia task → code → test → review → bảo mật → performance → migration DB → release → xử lý sự cố → nâng cấp dependency, kèm agent tự audit chính bộ squad.
+Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **18 agent chuyên biệt** (1 trưởng nhóm điều phối + 17 chuyên gia) và **17 lệnh workflow** giúp bạn đi trọn vòng đời phát triển phần mềm: phân tích yêu cầu → thiết kế → chia task → code → test → review → bảo mật → performance → migration DB → release → xử lý sự cố → nâng cấp dependency, kèm agent tự audit chính bộ squad.
 
 ## Đội hình
 
@@ -22,6 +22,8 @@ Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **16 agent chuy�
 | 🟠 `dependency-upgrader` | Nâng cấp dependency | Spring Boot 2→3, Java 17→21, Node, Python, React…; vá CVE; đọc migration guide, OpenRewrite/codemod, nâng từng bước có test | Đọc/ghi code + chạy lệnh |
 | 🔵 `tech-writer` | Technical writer | README, API docs, CHANGELOG, runbook, hướng dẫn | Đọc/ghi tài liệu |
 | 🩵 `squad-auditor` | Squad Auditor (EM + AI-workflow coach) | Audit chính bộ squad (dev-squad, lab) từ lịch sử làm việc thật: thiếu agent nào, agent nào yếu/thừa/chồng chéo, việc cần làm | Chỉ ghi vào `.squad/audit/`; không tự sửa squad |
+| 🩷 `ui-engineer` | UI engineer | Viết UI (page, component, form, bảng, dialog, responsive, dark mode) **theo design system của dự án** (`.squad/ui/DESIGN.md`), đủ các trạng thái loading/empty/error, đạt a11y WCAG 2.2 AA, **tự kiểm chứng trên trình duyệt** (screenshot và axe) trước khi bàn giao | Đọc/ghi code + chạy lệnh + trình duyệt |
+| 🟣 `design-reviewer` | Design reviewer | Review **UI đang chạy thật** theo DESIGN.md: tương tác, responsive, độ hoàn thiện thị giác, a11y, độ bền với các trạng thái, console. Lỗi phân loại Blocker/High/Medium/Nit, có screenshot làm bằng chứng. Là một phần của review gate khi diff đụng UI | **Chỉ đọc** + trình duyệt |
 
 Mỗi agent đều:
 - tự đọc codebase và tuân theo convention có sẵn của dự án,
@@ -39,6 +41,9 @@ Mỗi agent đều:
 | `/dev-squad:review [URL MR/PR \| !iid \| branch \| range]` | Code reviewer ∥ Security auditor chạy song song, gộp báo cáo; nhận cả URL/số MR/PR; luôn ghi báo cáo gộp ra đường dẫn cố định (`.squad/reports/review-mr-<id>.md`); kết luận READY TO PUSH / NOT READY |
 | `/dev-squad:commit-msg [ngữ cảnh]` | Soạn commit message từ diff đã stage theo đúng style của repo; lấy ticket ID từ tên branch và **cảnh báo nếu ticket không khớp** (cả với các commit chưa push); chỉ commit khi bạn xác nhận |
 | `/dev-squad:brief [đối tượng]` | Tóm tắt cho quản lý (hiểu lập trình nhưng không đọc code) theo một format cố định ≤250 từ: tóm tắt, vấn đề, đã làm, kết quả có bằng chứng, rủi ro, cần quyết định, bước tiếp theo |
+| `/dev-squad:ui <yêu cầu UI>` | `ui-init` nếu chưa có DESIGN.md → (BA) → **UI engineer** viết và kiểm chứng trên trình duyệt → **Design reviewer** ∥ Code reviewer → QA thêm test visual/a11y |
+| `/dev-squad:ui-init [app]` | Quét repo frontend và sinh `.squad/ui/DESIGN.md`: stack, token, font, dark mode, component có sẵn, route, pattern, nên/không nên |
+| `/dev-squad:ui-setup [trọng tâm]` | Kiểm tra máy và repo đang có gì (Playwright, Chromium, axe-core, Storybook, MCP) và gợi ý phần còn thiếu, **không tự cài** |
 | `/dev-squad:sprint-plan <mục tiêu>` | BA → (Architect) → PM, tạo board `.squad/TASKS.md` |
 | `/dev-squad:standup [khoảng thời gian]` | PM tổng hợp từ git log + task board |
 | `/dev-squad:ship [version]` | DevOps ∥ Security ∥ QA ∥ DB engineer (review migration) → Tech writer → kết luận GO / NO-GO |
@@ -90,6 +95,36 @@ Kết quả kiểm thử thật trên PostgreSQL 16 (bảng 600k dòng, pool 10,
 | baseline 5 q/s | 23 ms | 4.1 ms |
 | spike 600 q/s | 15 710 ms, 835 request bị drop | 1.2 ms, 0 drop |
 | recovery 5 q/s | 15 317 ms (chưa hồi phục) | 5.2 ms |
+
+## Mảng UI: design system, đôi mắt và review design
+
+Ba kỹ thuật được các squad AI làm UI tốt dùng nhiều nhất, áp dụng cho squad này:
+
+1. **Thu hẹp không gian lựa chọn** (giống cách v0 khoá shadcn/ui và token).
+   - `/dev-squad:ui-init` (skill `ui-context`) quét repo rồi sinh `.squad/ui/DESIGN.md`: framework, thư viện component, design token (CSS variables, Tailwind v4 `@theme`, config Tailwind), font `next/font`, dark mode, **danh sách component có sẵn** và route.
+   - Mọi việc UI phải đọc file này và **dùng lại component và token có sẵn trước khi viết mới**.
+2. **Cho agent "đôi mắt"** (skill `visual-verify`, script `ui_check.mjs` dùng Playwright và axe-core). Với mỗi route × viewport (375/768/1440) × theme (light/dark), script:
+   - chụp screenshot và ghi ARIA snapshot;
+   - thu lỗi console/JS và request hỏng;
+   - phát hiện **tràn ngang** và chỉ ra phần tử gây tràn;
+   - chạy **axe-core WCAG 2.2 AA**;
+   - xuất `report.md` và `report.json`, kèm exit code để dùng trong CI.
+
+   Luật: **không báo UI xong khi chưa có bằng chứng screenshot**; nếu không chạy được thì phải ghi "not visually verified".
+3. **Review design trên giao diện chạy thật.**
+   - `design-reviewer` review theo nhiều phase và gắn bằng chứng cho từng lỗi.
+   - `/dev-squad:review` tự gọi thêm reviewer này khi diff đụng file UI. **Lỗi Blocker/High của design là blocking** trong review gate.
+
+Thêm vào đó:
+- `qa-engineer` khoá kết quả bằng baseline `toHaveScreenshot` và `@axe-core/playwright`; `devops-engineer` có template CI (GitHub Actions và GitLab, dùng Playwright image).
+- `ui-engineer` có **chế độ sản phẩm mới**: chọn hướng thẩm mỹ trước khi code, để tránh kiểu "AI slop" (font Inter, gradient tím). Sản phẩm có sẵn thì ưu tiên nhất quán.
+- Các tích hợp tuỳ chọn (Playwright MCP, Chrome DevTools MCP, Figma Dev Mode MCP kèm Code Connect, Storybook MCP, Chromatic/Argos) được hướng dẫn trong `/dev-squad:ui-setup`. Chúng **không bật mặc định**, vì MCP tốn context.
+
+```bash
+# thử nhanh trên dự án của bạn (cần playwright + axe-core; hỏi trước khi cài)
+python3 plugins/dev-squad/skills/ui-context/scripts/scan_ui.py --md .squad/ui/DESIGN.md
+node plugins/dev-squad/skills/visual-verify/scripts/ui_check.mjs --base-url http://localhost:3000 --routes /,/settings --themes light,dark
+```
 
 ## Agent `squad-auditor` — tự audit bộ squad
 
@@ -200,6 +235,7 @@ Các agent trao đổi qua file để agent sau có đủ ngữ cảnh:
 ├── perf/<kịch-bản>/                 # performance-engineer: tool giả lập tải chạy lại được
 ├── tmp/                             # developer: script và log tạm (tự gitignore)
 ├── LESSONS.md                       # bài học chung: mọi agent đọc, agent có quyền ghi thì ghi thêm
+├── ui/DESIGN.md                     # hợp đồng UI (commit); ui/shots/ và ui/inventory.json không commit
 ├── incidents/<ngày>-<slug>/         # sre-incident-responder: timeline, postmortem
 ├── audit/<ngày>/                    # squad-auditor: squad-audit.md, drafts/, evidence/
 └── reports/<ngày>-<loại>-<slug>.md  # qa / review / security / debug / perf / upgrade
@@ -247,14 +283,17 @@ Bạn có thể commit `.squad/` để lưu lịch sử planning cho cả team, 
 agents-squad-team/
 ├── .claude-plugin/marketplace.json     # khai báo marketplace
 ├── .github/workflows/validate.yml      # CI: validate plugin + unit test
-├── tests/                             # unit test: engine giả lập tải + miner transcript
+├── tests/                             # unit test: giả lập tải, miner transcript, scan_ui, ui_check, lint prompt
+├── plugins/dev-squad/evals/           # eval hành vi cho `claude plugin eval` (định tuyến UI, review design)
 └── plugins/dev-squad/
     ├── .claude-plugin/plugin.json      # manifest plugin
-    ├── agents/                         # 16 agent
-    ├── commands/                       # 14 lệnh workflow
+    ├── agents/                         # 18 agent
+    ├── commands/                       # 17 lệnh workflow
     └── skills/
         ├── squad-playbook/SKILL.md     # playbook điều phối
         ├── squad-audit/                # skill audit squad + scripts/mine_transcripts.py
+        ├── ui-context/                 # skill DESIGN.md + scripts/scan_ui.py
+        ├── visual-verify/              # skill kiểm chứng trên trình duyệt + scripts/ui_check.mjs + references/ (CI, tích hợp)
         └── load-simulation/            # skill giả lập tải đột biến
             ├── SKILL.md
             ├── references/scenarios.md # 18 kịch bản sự cố + cách tái hiện
@@ -269,6 +308,17 @@ claude plugin validate --strict plugins/dev-squad
 claude --plugin-dir plugins/dev-squad plugin details dev-squad
 python3 -m unittest discover -s tests
 ```
+
+Test `tests/test_ui_tools.py` chạy Chromium thật nếu máy có Playwright; nếu không có thì tự bỏ qua phần trình duyệt.
+
+**Eval hành vi** (`plugins/dev-squad/evals/`, 5 case): kiểm tra squad giao việc UI cho `ui-engineer` + `design-reviewer`, gate có chặn finding design, không tự nhận "đã xác minh" khi chưa chạy trình duyệt, và **không** kéo agent UI vào việc backend/Kafka. Mỗi lần chạy tốn phí model (khoảng 0,6 USD cho 1 lượt × 5 case × 2 nhánh có/không plugin), nên không chạy trong CI:
+
+```bash
+cd plugins/dev-squad
+claude plugin eval . --ablation with-without --judge-model sonnet --no-publish   # mặc định 3 lượt mỗi case
+```
+
+Chỉ số chính là Δ = điểm có plugin − điểm không có plugin. Kết quả nằm ở `evals/results/` (đã gitignore).
 
 ## License
 

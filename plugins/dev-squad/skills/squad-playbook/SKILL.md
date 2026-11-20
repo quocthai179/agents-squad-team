@@ -24,6 +24,8 @@ description: Playbook for working with the dev-squad agent team — which specia
 | `dev-squad:sre-incident-responder` | Incident triage & mitigation proposals, status updates, postmortems, SLOs/alerts/runbooks | Docs/runbooks; prod changes only with approval |
 | `dev-squad:dependency-upgrader` | Framework/runtime/library upgrades, CVE patches | Yes (stepwise upgrades) |
 | `dev-squad:tech-writer` | README, API docs, changelog, runbooks | Docs only |
+| `dev-squad:ui-engineer` | UI: pages, components, responsive, dark mode, a11y; design-system first; verifies in a browser | Yes (UI code + tests) |
+| `dev-squad:design-reviewer` | Reviews the running UI against `.squad/ui/DESIGN.md` with screenshots and axe evidence | No (read-only, browser) |
 | `dev-squad:squad-auditor` | Audits the squads (dev-squad, lab) from transcripts, `.squad/`, `research/`, git; proposes fixes | Writes only `.squad/audit/` (read-only towards the squad) |
 
 Subagents cannot launch other subagents. Orchestration (the pipelines below) therefore runs from the main session — via the `/dev-squad:*` commands or by following this playbook — or with the orchestrator as the main agent (`claude --agent dev-squad:orchestrator`).
@@ -34,6 +36,7 @@ Subagents cannot launch other subagents. Orchestration (the pipelines below) the
 - **Bugfix** (`/dev-squad:bugfix`): debugger → (developer) → QA → code-reviewer.
 - **Review** (`/dev-squad:review`): code-reviewer ∥ security-auditor on local changes, a range, or an MR/PR (URL, `!iid`, `#n`). Writes the merged report to a fixed path (`.squad/reports/review-mr-<id>.md` for MRs) and ends with READY TO PUSH / NOT READY.
 - **Performance** (`/dev-squad:perf`): performance-engineer → (developer) → QA ∥ performance-engineer re-measure → code-reviewer.
+- **UI change** (`/dev-squad:ui`): `ui-context` (DESIGN.md) → (BA) → ui-engineer (build and verify in a browser) → design-reviewer ∥ code-reviewer → qa-engineer (visual and a11y tests).
 - **Schema/data change** (`/dev-squad:db-change`): database-engineer plan → user confirms → database-engineer ∥ developer → QA (migrate up/down) → code-reviewer ∥ database-engineer → tech-writer rollout notes.
 - **Incident** (`/dev-squad:incident`): sre-incident-responder triage → user approves mitigations → debugger / performance-engineer / database-engineer / devops-engineer → developer fix → postmortem → PM action items.
 - **Upgrade** (`/dev-squad:upgrade`): dependency-upgrader plan → user confirms → stepwise upgrade → QA ∥ security ∥ perf → code-reviewer → tech-writer.
@@ -54,8 +57,8 @@ Skip steps that add nothing (a one-line fix needs no BA or architect), and say w
 **Who.** Only the main session, or the orchestrator running as the main agent, runs the gate and pushes. **Sub-agents never push, tag, or open/update an MR/PR**, even if a brief asks. They hand off with `Next: user — run /dev-squad:review before confirming the push/MR`.
 
 **Steps.**
-1. Run `/dev-squad:review` on the diff that would be pushed. In the main session this is the Skill `dev-squad:review`, which runs `code-reviewer` and `security-auditor` in parallel.
-2. **Blocking findings** are every `code-reviewer` 🔴 Blocking item plus every `security-auditor` finding rated **Critical or High**. Security Medium findings are shown to the user, who decides whether they block.
+1. Run `/dev-squad:review` on the diff that would be pushed. In the main session this is the Skill `dev-squad:review`, which runs `code-reviewer` and `security-auditor` in parallel, and also `design-reviewer` when the diff touches UI. Do not run the design review separately.
+2. **Blocking findings** are every `code-reviewer` 🔴 Blocking item, plus every `security-auditor` finding rated **Critical or High**, plus every `design-reviewer` **Blocker or High** finding (the design reviewer runs when the diff touches UI). Security Medium findings are shown to the user, who decides whether they block.
 3. Fix the blocking findings, usually via `dev-squad:developer`, or record the user's explicit decision to defer each one, with a reason.
 4. Show the gate decision: **READY TO PUSH** or **NOT READY**, with counts by severity and the lists of fixed and deferred items. Then ask the user to confirm.
 5. Push or open the MR only after that confirmation.
@@ -82,6 +85,7 @@ Agents start with no memory of the conversation. Every brief should contain:
 ├── TASKS.md                    # project-manager (single source of truth)
 ├── LESSONS.md                  # every agent reads it first; agents with write access append lessons (format below)
 ├── perf/<scenario>/            # performance-engineer: runnable load-simulation tools
+├── ui/DESIGN.md                # ui-context: the UI contract (commit it); ui/shots/ and ui/inventory.json are not committed
 ├── tmp/                        # developer: scratch scripts and build logs (self-ignored via tmp/.gitignore)
 ├── incidents/<date>-<slug>/    # sre-incident-responder: timeline.md, postmortem.md
 ├── audit/<date>/               # squad-auditor: squad-audit.md, drafts/, evidence/ (keep evidence out of git)

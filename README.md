@@ -1,8 +1,14 @@
 # Agents Squad Team 🧑‍💻🤖
 
+![Agents Squad Team — 16 agent chuyên biệt, 14 lệnh workflow cho Claude Code](assets/marketing/hero-banner.png)
+
 Bộ plugin **Claude Code** cung cấp một "đội dev" gồm **16 agent chuyên biệt** (1 trưởng nhóm điều phối + 15 chuyên gia) và **14 lệnh workflow** giúp bạn đi trọn vòng đời phát triển phần mềm: phân tích yêu cầu → thiết kế → chia task → code → test → review → bảo mật → performance → migration DB → release → xử lý sự cố → nâng cấp dependency, kèm agent tự audit chính bộ squad.
 
 ## Đội hình
+
+![Một orchestrator, 15 chuyên gia, chia sẻ tài liệu và bàn giao qua thư mục .squad](assets/marketing/specialists-shared-context.png)
+
+*Minh họa một số vai trò trong đội; danh sách đầy đủ ở bảng bên dưới.*
 
 | Agent | Vai trò | Khi nào dùng | Quyền |
 |---|---|---|---|
@@ -30,6 +36,10 @@ Mỗi agent đều:
 - kết thúc bằng khối **Handoff** (trạng thái, artifact, agent tiếp theo, rủi ro).
 
 ## Lệnh workflow (slash commands)
+
+![Workflow feature: làm rõ yêu cầu, thiết kế, chia task, code, QA, review, tài liệu và đóng task](assets/marketing/feature-workflow.png)
+
+*Sơ đồ tóm tắt `/dev-squad:feature`: QA fail sẽ quay lại sửa và test; security audit áp dụng khi tính năng có liên quan.*
 
 | Lệnh | Pipeline |
 |---|---|
@@ -269,6 +279,12 @@ claude plugin validate --strict plugins/dev-squad
 claude --plugin-dir plugins/dev-squad plugin details dev-squad
 python3 -m unittest discover -s tests
 ```
+
+## Tài nguyên giới thiệu
+
+- [Ảnh chia sẻ mạng xã hội](assets/marketing/social-preview.png)
+- [Sơ đồ workflow dạng SVG](assets/marketing/feature-workflow.svg)
+- [Hướng dẫn dùng bộ ảnh và prompt gốc](docs/marketing/README.md)
 
 ## License
 

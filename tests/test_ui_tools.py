@@ -128,6 +128,8 @@ class ScanUiTest(unittest.TestCase):
         write(os.path.join(app, "a.css"), ":root{" + "--a:x " * 60000 + "}")
         write(os.path.join(app, "b.css"), "@media (prefers-color-scheme:dark){" * 11000)  # unclosed, nested
         write(os.path.join(app, "c.css"), "[data-theme" * 30000 + "@media " * 30000)
+        for i in range(10):
+            write(os.path.join(app, f"d{i}.css"), (":root{" + "-" * 19990 + "}") * 10)  # dash runs in token names
         r = subprocess.run([sys.executable, "-I", SCAN, "--root", app], capture_output=True, timeout=20)
         self.assertEqual(r.returncode, 0)
 
@@ -210,6 +212,39 @@ SEEDED = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta nam
 <body><main><h1>Orders</h1><p class="faint">hard to read</p><img src="/missing.png">
 <button><svg width="16" height="16"><circle cx="8" cy="8" r="6"/></svg></button><div class="wide">banner</div></main>
 <script>console.error("boom")</script></body></html>"""
+
+
+def read_all(folder, suffixes):
+    text = ""
+    for name in os.listdir(folder):
+        if name.endswith(suffixes):
+            with open(os.path.join(folder, name), encoding="utf-8", errors="ignore") as fh:
+                text += fh.read()
+    return text
+
+
+def serve(routes, log, name):
+    """Start a loopback server; routes map path -> (status, headers, body or callable)."""
+    class H(QuietHandler):
+        def handle_any(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            if length:
+                self.rfile.read(length)
+            log.append((name, self.command, self.path, self.headers.get("X-Preview-Token")))
+            status, headers, body = routes.get(self.path.split("?")[0], (404, {}, b"missing"))
+            body = body() if callable(body) else body
+            self.send_response(status)
+            for k, v in headers.items():
+                self.send_header(k, v() if callable(v) else v)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        do_GET = do_POST = handle_any
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"http://127.0.0.1:{srv.server_port}"
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -384,8 +419,7 @@ class UiCheckBrowserTest(unittest.TestCase):
                                     "--wait-server", "10"], capture_output=True, text=True, cwd=tmp, timeout=120)
                 with open(os.path.join(out, "report.json"), encoding="utf-8") as fh:
                     report = json.load(fh)
-                captured = "".join(open(os.path.join(out, f), encoding="utf-8", errors="ignore").read()
-                                   for f in os.listdir(out) if f.endswith((".yml", ".md", ".json")))
+                captured = read_all(out, (".yml", ".md", ".json"))
                 shots = [f for f in os.listdir(out) if f.endswith(".png")]
         finally:
             for srv in (base, other):
@@ -396,6 +430,79 @@ class UiCheckBrowserTest(unittest.TestCase):
         self.assertIn("leave the base origin", report["results"][0]["error"])
         self.assertNotIn("OTHER-ORIGIN-CONTENT", captured)
         self.assertEqual(shots, [])
+
+    def run_check(self, base_url, routes, *extra, tmp):
+        out = os.path.join(tmp, "out")
+        r = subprocess.run([NODE, CHECK, "--base-url", base_url, "--routes", routes, "--viewports", "375x812",
+                            "--out", out, "--wait-server", "10", *extra], capture_output=True, text=True, cwd=tmp, timeout=120)
+        with open(os.path.join(out, "report.json"), encoding="utf-8") as fh:
+            return r, json.load(fh), out
+
+    def test_capture_phase_navigation_leaves_no_evidence(self):
+        log = []
+        other, other_url = serve({"/landing": (200, {"Content-Type": "text/html"},
+                                               b"<!doctype html><title>o</title><h1>OTHER-ORIGIN-CONTENT</h1>")}, log, "other")
+        trap = (b'<!doctype html><html lang="en"><title>t</title><main><h1>x</h1></main><script>'
+                b'Object.defineProperty(document.documentElement, "scrollWidth", {get() { location = "/away"; return 0; }})'
+                b'</script></html>')
+        base, base_url = serve({"/": (200, {"Content-Type": "text/html"}, trap),
+                                "/away": (302, {"Location": lambda: f"{other_url}/landing"}, b"")}, log, "base")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                r, report, out = self.run_check(base_url, "/", "--no-axe", "--fail-on", "none", tmp=tmp)
+                captured = read_all(out, (".yml", ".md", ".json"))
+                shots = [f for f in os.listdir(out) if f.endswith(".png")]
+        finally:
+            for srv in (base, other):
+                srv.shutdown()
+                srv.server_close()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("navigate during capture", report["results"][0]["error"])
+        self.assertNotIn("OTHER-ORIGIN-CONTENT", captured)
+        self.assertEqual(shots, [])
+        self.assertNotIn(("other", "GET", "/landing", None), log)
+
+    def test_huge_console_message_does_not_hang(self):
+        page = (b'<!doctype html><html lang="en"><title>t</title><main><h1>x</h1></main>'
+                b'<script>console.error("a.".repeat(500000))</script></html>')
+        base, base_url = serve({"/": (200, {"Content-Type": "text/html"}, page)}, [], "base")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                r, report, _ = self.run_check(base_url, "/", "--no-axe", "--no-aria", tmp=tmp)
+        finally:
+            base.shutdown()
+            base.server_close()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertLessEqual(len(report["results"][0]["consoleErrors"][0]), 300)
+
+    def test_header_mode_redirects_keep_urls_and_stop(self):
+        log = []
+        html = {"Content-Type": "text/html"}
+        page = (b'<!doctype html><html lang="en"><title>t</title><main><h1>x</h1></main>'
+                b'<script src="app.js"></script></html>')
+        loop = {f"/loop/{i}": (302, {"Location": f"/loop/{i + 1}"}, b"") for i in range(40)}
+        base, base_url = serve({"/old": (302, {"Location": "/new/dir/page"}, b""), "/new/dir/page": (200, html, page),
+                                "/new/dir/app.js": (200, {"Content-Type": "text/javascript"}, b"void 0"),
+                                "/": (200, html, b'<!doctype html><html lang="en"><title>r</title><main><h1>r</h1></main></html>'),
+                                "/root": (200, html, b'<!doctype html><html lang="en"><title>r</title><main><h1>r</h1></main></html>'),
+                                **loop}, log, "base")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                r, report, out = self.run_check(base_url, "/old,/loop/0,/,/root", "--no-axe", "--no-aria",
+                                                "--header", "X-Preview-Token: t0k", tmp=tmp)
+                shots = sorted(f for f in os.listdir(out) if f.endswith(".png"))
+        finally:
+            base.shutdown()
+            base.server_close()
+        res = {x["route"]: x for x in report["results"]}
+        self.assertIn(("base", "GET", "/new/dir/app.js", "t0k"), log)  # relative URL resolved against the real page
+        self.assertEqual(res["/old"].get("redirectedTo"), "/new/dir/page")
+        self.assertIsNone(res["/old"].get("error"))
+        self.assertTrue(res["/loop/0"].get("error"))  # bounded, never handed to the browser without the header
+        self.assertLess(len([x for x in log if x[2].startswith("/loop/")]), 40)
+        self.assertEqual([x for x in log if x[2].startswith("/loop/") and x[3] != "t0k"], [])
+        self.assertEqual(len([f for f in shots if f.startswith("root")]), 2)  # "/" and "/root" do not overwrite
+        self.assertEqual(r.returncode, 1)
 
 if __name__ == "__main__":
     unittest.main()

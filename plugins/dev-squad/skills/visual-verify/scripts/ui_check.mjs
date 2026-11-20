@@ -76,10 +76,11 @@ function parseArgs(argv) {
   }
   if (!a.baseUrl) die(`--base-url is required\n${HELP}`);
   let u;
-  try { u = new URL(a.baseUrl); } catch { die(`invalid --base-url ${a.baseUrl}`); }
+  try { u = new URL(a.baseUrl); } catch { die("invalid --base-url (not a URL)"); }
   if (!["http:", "https:"].includes(u.protocol)) die("--base-url must be http(s)");
   if (u.username || u.password) {  // user:pass@ becomes origin-scoped HTTP credentials, never part of a URL we print
-    a.httpCredentials = { username: decodeURIComponent(u.username), password: decodeURIComponent(u.password), origin: u.origin };
+    const dec = (x) => { try { return decodeURIComponent(x); } catch { return x; } };  // a bare "%" stays as typed
+    a.httpCredentials = { username: dec(u.username), password: dec(u.password), origin: u.origin };
     u.username = ""; u.password = "";
   }
   u.hash = "";
@@ -122,13 +123,16 @@ function redactUrl(raw) {
   } catch { return String(raw).replace(/[?#].*$/, ""); }
 }
 
-// Any URL inside free text (error messages, console output) is redacted the same way.
-const redactText = (t) => String(t).replace(/\b[a-z][\w+.-]*:\/\/[^\s"'<>)]+/gi, (m) => redactUrl(m));
+// Page-controlled text: truncated FIRST (so no regex ever sees a huge string), URLs inside it redacted, control
+// and invisible characters removed. This is what report.json stores.
+const plain = (t, n = 300) => String(t ?? "").slice(0, 4000)
+  .replace(/\b[a-z][a-z0-9+.-]{0,31}:\/\/[^\s"'<>)]{1,2048}/gi, (m) => redactUrl(m))
+  .replace(/[\p{Cc}\p{Cf}\u2028\u2029]+/gu, " ").slice(0, n);
+const redactText = (t) => plain(t, 4000);
 
-// Page-controlled text goes into report.md as data on one line: no control or invisible characters, table pipes
-// or code spans.
-const clean = (t, n = 300) => redactText(t).replace(/[\p{Cc}\p{Cf}\u2028\u2029]+/gu, " ").replace(/\\/g, "\\\\")
-  .replace(/\|/g, "\\|").replace(/`/g, "'").slice(0, n);
+// The same text as inert Markdown for report.md: no table breaks, code spans, HTML, links or images.
+const clean = (t, n = 300) => plain(t, n).replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/`/g, "'")
+  .replace(/</g, "&lt;").replace(/([[\]!])/g, "\\$1");
 
 function resolveFrom(name) {
   const bases = [path.join(process.cwd(), "noop.js")];
@@ -159,11 +163,13 @@ async function waitForServer(url, seconds) {
   die(`server at ${redactUrl(url)} did not answer within ${seconds}s (${last}). Is the dev server running?`);
 }
 
-// "/a/b" -> "a_b". Anything that could collide after sanitising ("/a_b", "/About" vs "/about" on case-insensitive
-// disks, "/x?tab=1") gets a short hash suffix; query values never appear in file names.
+// "/a/b" -> "a_b". A route gets a short hash suffix unless the plain name maps back to exactly that route, so
+// "/a_b", "/a/", "/a//b", "/About", "/root" and "/x?tab=1" never overwrite another route's files. Query values
+// never appear in file names.
 function slug(route) {
   const s = route.split(/[?#]/)[0].replace(/^\/+|\/+$/g, "").replace(/[^a-z0-9.-]+/gi, "_").toLowerCase() || "root";
-  return /^[a-z0-9/.-]*$/.test(route) ? s : `${s}-${createHash("sha1").update(route).digest("hex").slice(0, 6)}`;
+  const canonical = s === "root" ? "/" : "/" + s.replace(/_/g, "/");
+  return route === canonical && !/_|\.\./.test(route) ? s : `${s}-${createHash("sha1").update(route).digest("hex").slice(0, 6)}`;
 }
 
 // Route as shown in reports: the path plus query keys, never query values.
@@ -178,6 +184,8 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
   const consoleErrors = [], pageErrors = [], failedRequests = [];
   const sameOrigin = (u) => { try { return new URL(u).origin === a.origin; } catch { return false; } };
   let leftOrigin = null;  // set when the top-level page tried to go to another origin
+  let capturing = false;  // once evidence capture starts, the top-level page may not navigate at all
+  let navigating = false, pendingNav = null;  // --header mode: same-origin top-level redirects are re-navigated
   page.on("framenavigated", (f) => {  // second line of defence: catches anything the route handler did not see
     if (f === page.mainFrame() && f.url() !== "about:blank" && !f.url().startsWith("chrome-error:") && !sameOrigin(f.url()))
       leftOrigin ??= redactUrl(f.url());
@@ -204,11 +212,17 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
       await rt.abort("blockedbyclient");
     };
     try {
+      if (mainTop && capturing) {  // the first request of any redirect chain is routed, so chains cannot start
+        leftOrigin ??= sameOrigin(req.url()) ? "a navigation during capture" : redactUrl(req.url());
+        return await rt.abort("blockedbyclient");
+      }
       if (!sameOrigin(req.url())) return top ? await blockTop(req.url()) : await rt.continue();
       if (!hasHeaders) return await rt.continue();
       let target = req.url(), method = req.method(), postData = req.postDataBuffer() ?? undefined, resp;
-      for (let hop = 0; hop < 10; hop++) {
-        resp = await rt.fetch({ url: target, method, postData, headers: { ...req.headers(), ...a.headerMap }, maxRedirects: 0 });
+      let headers = { ...req.headers(), ...a.headerMap };
+      for (let hop = 0; ; hop++) {
+        if (hop >= 10) throw new Error("too many redirects");
+        resp = await rt.fetch({ url: target, method, postData, headers, maxRedirects: 0 });
         const loc = resp.status() >= 300 && resp.status() < 400 ? resp.headers()["location"] : null;
         if (!loc) break;
         const next = new URL(loc, target).toString();
@@ -216,7 +230,14 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
           if (top) return await blockTop(next);
           break;  // hand the 3xx to the browser: it follows it without our headers
         }
-        if ([301, 302, 303].includes(resp.status()) && !["GET", "HEAD"].includes(method)) { method = "GET"; postData = undefined; }
+        if (mainTop && navigating) {  // let goto load the target itself, so the page gets the right URL
+          pendingNav = next;
+          return await rt.abort("aborted");
+        }
+        if ([301, 302, 303].includes(resp.status()) && !["GET", "HEAD"].includes(method)) {
+          method = "GET"; postData = undefined;
+          headers = Object.fromEntries(Object.entries(headers).filter(([k]) => !/^content-(length|type)$/i.test(k)));
+        }
         target = next;
       }
       return await rt.fulfill({ response: resp });
@@ -226,8 +247,8 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
     }
   });
   const assertOnOrigin = () => { if (leftOrigin) throw new Error(`page tried to leave the base origin (to ${leftOrigin})`); };
-  page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(redactText(m.text()).slice(0, 300)); });
-  page.on("pageerror", (e) => pageErrors.push(redactText(String(e.message || e)).slice(0, 300)));
+  page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(plain(m.text())); });
+  page.on("pageerror", (e) => pageErrors.push(plain(e?.message ?? e)));
   page.on("requestfailed", (r) => {
     const error = r.failure()?.errorText || "failed";
     if (error.includes("ERR_ABORTED") && !r.isNavigationRequest()) return;  // cancelled by the page itself, not a failure
@@ -238,15 +259,31 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
   const url = new URL(route, a.baseUrl).toString();
   const res = { route: showRoute(route, a), viewport: vp, theme, url: redactUrl(url), status: null };
   const base = path.join(a.out, `${slug(route)}__${vp}__${theme}`);
+  // Throw away anything captured if the page did not stay put: nothing from another origin may be kept.
+  const discardCapture = () => {
+    for (const f of [res.screenshot, res.aria]) if (f) fs.rmSync(f, { force: true });
+    delete res.screenshot; delete res.aria; delete res.axe; delete res.overflow;
+  };
   try {
-    const resp = await page.goto(url, { waitUntil: "load", timeout: a.timeout });
+    let resp, target = url;
+    navigating = true;
+    for (let hop = 0; ; hop++) {
+      try { resp = await page.goto(target, { waitUntil: "load", timeout: a.timeout }); break; }
+      catch (e) {
+        if (!pendingNav || hop >= 10) throw e;
+        target = pendingNav; pendingNav = null;
+      }
+    }
+    navigating = false;
     res.status = resp?.status() ?? null;
+    if (target !== url) res.redirectedTo = showRoute(new URL(target).pathname + new URL(target).search, a);
     assertOnOrigin();
     try { await page.waitForLoadState("networkidle", { timeout: 5000 }); } catch {}
     if (a.waitFor) await page.waitForSelector(a.waitFor, { timeout: a.timeout });
     if (theme === "dark" && a.darkMode === "class") await page.evaluate(() => document.documentElement.classList.add("dark"));
     if (a.settleMs) await page.waitForTimeout(a.settleMs);
     assertOnOrigin();
+    capturing = true;
 
     res.overflow = await page.evaluate(() => {
       const de = document.documentElement, vw = de.clientWidth;
@@ -264,31 +301,34 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
       return { scrollWidth: de.scrollWidth, viewportWidth: vw, culprits };
     });
 
-    assertOnOrigin();
     await page.screenshot({ path: `${base}.png`, fullPage: !!a.fullPage });
     res.screenshot = `${base}.png`;
     if (a.aria) {
       try { fs.writeFileSync(`${base}.aria.yml`, await page.locator("body").ariaSnapshot()); res.aria = `${base}.aria.yml`; }
-      catch (e) { res.ariaError = String(e.message).slice(0, 200); }
+      catch (e) { res.ariaError = plain(e?.message ?? e, 200); }
     }
     if (axePath) {
       try {
         await page.addScriptTag({ path: axePath });
         const r = await page.evaluate(async () => window.axe.run(document, { runOnly: { type: "tag",
           values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"] } }));
-        assertOnOrigin();
-      // The page could have replaced window.axe: keep only well-formed fields.
-      res.axe = (Array.isArray(r?.violations) ? r.violations : []).map((v) => ({
-        id: clean(v.id, 80), impact: IMPACT[v.impact] ? v.impact : "unknown", help: clean(v.help, 200),
-        helpUrl: /^https:\/\/dequeuniversity\.com\/[\w./?=&%-]*$/.test(String(v.helpUrl)) ? v.helpUrl : "",
-        nodes: Array.isArray(v.nodes) ? v.nodes.length : 0,
-        targets: (Array.isArray(v.nodes) ? v.nodes : []).slice(0, 3).map((n) => clean([].concat(n?.target ?? []).join(" "), 200)) }));
-      } catch (e) { res.axeError = redactText(String(e.message || e).split("\n")[0]).slice(0, 200); }  // e.g. a CSP blocks the script
+        // The page could have replaced window.axe: keep only well-formed fields.
+        res.axe = (Array.isArray(r?.violations) ? r.violations : []).map((v) => ({
+          id: plain(v.id, 80), impact: Object.hasOwn(IMPACT, v.impact) ? v.impact : "unknown", help: plain(v.help, 200),
+          helpUrl: /^https:\/\/dequeuniversity\.com\/[\w./?=&%-]{0,200}$/.test(String(v.helpUrl)) ? v.helpUrl : "",
+          nodes: Array.isArray(v.nodes) ? v.nodes.length : 0,
+          targets: (Array.isArray(v.nodes) ? v.nodes : []).slice(0, 3).map((n) => plain([].concat(n?.target ?? []).join(" "), 200)) }));
+      } catch (e) { res.axeError = plain(String(e?.message ?? e).split("\n")[0], 200); }  // e.g. a CSP blocks the script
     }
+    // Checked after every capture step and outside the axe try: a navigation started from inside our own
+    // evaluate calls (e.g. a getter on scrollWidth) must not leave other-origin evidence behind.
+    if (!leftOrigin && !sameOrigin(page.mainFrame().url())) leftOrigin = redactUrl(page.mainFrame().url());
+    assertOnOrigin();
   } catch (e) {
-    res.error = leftOrigin ? `page tried to leave the base origin (to ${leftOrigin})`
-      : redactText(String(e.message || e).split("\n")[0]).slice(0, 300);
-    if (!res.screenshot && !leftOrigin) {  // never capture another origin's content  // keep visual evidence of what the page showed when it failed
+    res.error = leftOrigin ? `page tried to leave the base origin or navigate during capture (${leftOrigin})`
+      : plain(String(e?.message ?? e).split("\n")[0]);
+    if (leftOrigin) discardCapture();  // never keep another origin's content
+    else if (!res.screenshot) {  // keep visual evidence of what the page showed when it failed
       try { await page.screenshot({ path: `${base}.png` }); res.screenshot = `${base}.png`; } catch {}
     }
   } finally {
@@ -316,10 +356,11 @@ function toMarkdown(a, results, verdict) {
     if (r.error) items.push(`- page error: ${clean(r.error)}`);
     if (r.status >= 400) items.push(`- page answered HTTP ${r.status}`);
     if (r.axeError) items.push(`- accessibility scan failed: ${clean(r.axeError)}`);
+    if (r.redirectedTo) items.push(`- redirected to ${clean(r.redirectedTo)}`);
     for (const e of [...r.pageErrors, ...r.consoleErrors]) items.push(`- console/page error: ${clean(e)}`);
     for (const f of r.failedRequests) items.push(`- failed request: ${f.status ?? clean(f.error)} ${clean(f.url)}`);
     if (r.overflow) items.push(`- horizontal overflow: ${clean(r.overflow.culprits.join(", ") || "(no single culprit found)", 600)}`);
-    for (const v of r.axe || []) items.push(`- a11y ${v.impact}: ${v.id} — ${v.help} (${v.nodes} node(s): ${v.targets.join(" ; ")}) ${v.helpUrl}`);
+    for (const v of r.axe || []) items.push(`- a11y ${v.impact}: ${clean(v.id, 80)} — ${clean(v.help, 200)} (${v.nodes} node(s): ${clean(v.targets.join(" ; "), 600)}) ${v.helpUrl}`);
     if (items.length) details.push(`### ${clean(r.route)} @ ${r.viewport} ${r.theme}`, ...items, "");
   }
   return [...L, "", "## Details", "",

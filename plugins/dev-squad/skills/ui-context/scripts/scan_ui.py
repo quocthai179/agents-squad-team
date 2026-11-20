@@ -20,6 +20,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from collections import OrderedDict
 
 SKIP_DIRS = {"node_modules", ".git", ".next", "dist", "build", "out", ".turbo", ".nuxt", ".svelte-kit", "coverage",
@@ -59,7 +60,7 @@ COMPONENT_EXT = (".tsx", ".jsx", ".vue", ".svelte", ".ts")
 CSS_EXT = (".css", ".scss", ".sass", ".less", ".pcss")
 # Values are bounded and stop at a newline so hostile CSS cannot make the scan quadratic; the last
 # declaration of a block may omit its ";".
-CSS_VAR = re.compile(r"(--[A-Za-z0-9_-]+)\s*:\s*([^;{}\n]{1,200})(?:;|$)", re.M)
+CSS_VAR = re.compile(r"(--[A-Za-z0-9_-]{1,100})\s*:\s*([^;{}\n]{1,200})(?:;|$)", re.M)
 CSS_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 BLOCK = re.compile(r"(:root|\.dark|\[data-theme[^\]{}]{0,80}\]|html\.dark|@theme(?:\s+inline)?)\s*\{([^{}]{0,20000})\}", re.S)
 DARK_MEDIA = re.compile(r"@media[^{;]{0,200}?prefers-color-scheme\s*:\s*dark[^{;]{0,200}\{")
@@ -69,8 +70,8 @@ NEXT_FONT_DEFAULT = re.compile(r"import\s+([A-Za-z_$][\w$]*)\s+from\s*['\"]next/
 TW_KEYS = {"colors", "spacing", "fontFamily", "fontSize", "borderRadius", "boxShadow", "screens", "extend", "animation",
            "keyframes", "container", "zIndex"}
 SAFE_SEGMENT = re.compile(r"^(?!\.+$)[A-Za-z0-9._~\-\[\]]+$")  # never "." or ".."
-SAFE_VERSION = re.compile(r"^[\w.^~<>=|*@:/ -]{1,40}$")
-INVISIBLE = re.compile(r"[\x00-\x1f\x7f\x85\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]+")
+# A version range or a known specifier: ASCII only, and it must contain a digit unless it is a bare tag.
+SAFE_VERSION = re.compile(r"^(?=.*\d)[\w.^~<>=|*@:/ -]{1,40}$|^(\*|latest|next|workspace:\*)$", re.ASCII)
 
 
 def walk(root, max_depth=8):
@@ -105,17 +106,19 @@ def load_pkg(app):
 
 def code(value, limit=200):
     """Render repo-controlled text as one inline code span that cannot break out of the Markdown."""
-    return f"`{flat(value)[:limit]}`"  # inside a code span, HTML and Markdown are inert
+    # Inside a code span HTML, Markdown and backslashes are literal; only backticks and table pipes need care.
+    return f"`{visible(value).replace('`', chr(39)).replace('|', chr(92) + '|')[:limit]}`"
 
 
-def flat(value):
-    """One line: no control or invisible characters, no backticks, escaped backslashes and table pipes."""
-    return INVISIBLE.sub(" ", str(value)).replace("\\", "\\\\").replace("`", "'").replace("|", "\\|")
+def visible(value):
+    """One line without control, format (bidi, zero-width, tag) or line/paragraph separator characters."""
+    return "".join(" " if unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") else c for c in str(value)[:2000])
 
 
 def cell(value, limit=80):
-    """Repo-controlled text outside a code span: also neutralise raw HTML."""
-    return flat(value).replace("<", "&lt;")[:limit]
+    """Repo-controlled text outside a code span: inert Markdown (no table breaks, HTML, links or images)."""
+    text = visible(value).replace("\\", "\\\\").replace("`", "'").replace("|", "\\|").replace("<", "&lt;")
+    return re.sub(r"([\[\]!])", r"\\\1", text)[:limit]
 
 
 def dark_spans(css):

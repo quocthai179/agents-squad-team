@@ -106,6 +106,15 @@ function parseArgs(argv) {
 
 function die(msg, code = 2) { console.error(msg); process.exit(code); }
 
+// Anything the page can stall (evaluate, script injection, close) runs against a deadline.
+function within(promise, ms, what) {
+  let timer;
+  const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${what} timed out after ${ms} ms`)), ms); });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
+const noHash = (u) => { try { const x = new URL(u); x.hash = ""; return x.href; } catch { return u; } };
+
 function num(flag, raw) {
   const n = Number(raw);
   if (raw === "" || !Number.isFinite(n) || n < 0) die(`${flag} needs a non-negative number, got ${raw}`);
@@ -234,7 +243,7 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
           if (top) return await blockTop(next);
           break;  // hand the 3xx to the browser: it follows it without our headers
         }
-        if (mainTop && req.url() === gotoTarget && !req.redirectedFrom()) {  // goto's own request: load the target
+        if (mainTop && gotoTarget && noHash(req.url()) === noHash(gotoTarget) && !req.redirectedFrom()) {  // goto's own request: load the target
           pendingNav = next;                                                 // itself, so the page gets the right URL
           ownAborts.add(req);
           return await rt.abort("aborted");
@@ -264,11 +273,9 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
   const url = new URL(route, a.baseUrl).toString();
   const res = { route: showRoute(route, a), viewport: vp, theme, url: redactUrl(url), status: null };
   const base = path.join(a.out, `${slug(route)}__${vp}__${theme}`);
-  // Throw away anything captured if the page did not stay put: nothing from another origin may be kept.
-  const discardCapture = () => {
-    for (const f of [res.screenshot, res.aria]) if (f) fs.rmSync(f, { force: true });
-    delete res.screenshot; delete res.aria; delete res.axe; delete res.overflow;
-  };
+  // Evidence stays in memory until the page can no longer move; it is written to disk only if the page stayed put.
+  const pending = {};
+  const t = a.timeout;
   try {
     let resp, target = url;
     for (let hop = 0; ; hop++) {
@@ -285,12 +292,14 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
     assertOnOrigin();
     try { await page.waitForLoadState("networkidle", { timeout: 5000 }); } catch {}
     if (a.waitFor) await page.waitForSelector(a.waitFor, { timeout: a.timeout });
-    if (theme === "dark" && a.darkMode === "class") await page.evaluate(() => document.documentElement.classList.add("dark"));
+    if (theme === "dark" && a.darkMode === "class")
+      await within(page.evaluate(() => document.documentElement.classList.add("dark")), t, "switching to dark mode");
     if (a.settleMs) await page.waitForTimeout(a.settleMs);
     assertOnOrigin();
+    const doc = await within(page.evaluateHandle(() => document), t, "reading the page");  // identity check after capture
     capturing = true;
 
-    res.overflow = await page.evaluate(() => {
+    res.overflow = await within(page.evaluate(() => {
       const de = document.documentElement, vw = de.clientWidth;
       if (de.scrollWidth <= vw + 1) return null;
       const culprits = [];
@@ -304,19 +313,18 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
         }
       }
       return { scrollWidth: de.scrollWidth, viewportWidth: vw, culprits };
-    });
+    }), t, "the overflow check");
 
-    await page.screenshot({ path: `${base}.png`, fullPage: !!a.fullPage });
-    res.screenshot = `${base}.png`;
+    pending.png = await page.screenshot({ fullPage: !!a.fullPage, timeout: t });
     if (a.aria) {
-      try { fs.writeFileSync(`${base}.aria.yml`, await page.locator("body").ariaSnapshot()); res.aria = `${base}.aria.yml`; }
+      try { pending.aria = await page.locator("body").ariaSnapshot({ timeout: t }); }
       catch (e) { res.ariaError = plain(e?.message ?? e, 200); }
     }
     if (axePath) {
       try {
-        await page.addScriptTag({ path: axePath });
-        const r = await page.evaluate(async () => window.axe.run(document, { runOnly: { type: "tag",
-          values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"] } }));
+        await within(page.addScriptTag({ path: axePath }), t, "loading axe-core");
+        const r = await within(page.evaluate(async () => window.axe.run(document, { runOnly: { type: "tag",
+          values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"] } })), t, "the accessibility scan");
         // The page could have replaced window.axe: keep only well-formed fields.
         res.axe = (Array.isArray(r?.violations) ? r.violations : []).map((v) => ({
           id: plain(v.id, 80), impact: Object.hasOwn(IMPACT, v.impact) ? v.impact : "unknown", help: plain(v.help, 200),
@@ -326,14 +334,17 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
       } catch (e) { res.axeError = plain(String(e?.message ?? e).split("\n")[0], 200); }  // e.g. a CSP blocks the script
     }
     // Checked after every capture step and outside the axe try: a navigation started from inside our own
-    // evaluate calls (e.g. a getter on scrollWidth) must not leave other-origin evidence behind.
+    // evaluate calls (e.g. a getter on scrollWidth) must not leave other-origin evidence behind. A different
+    // document object means the page replaced itself (blob: or javascript: navigation) during capture.
     if (!leftOrigin && !sameOrigin(page.mainFrame().url())) leftOrigin = redactUrl(page.mainFrame().url());
+    const sameDoc = await within(page.evaluate((d) => d === document, doc), t, "the document check").catch(() => false);
+    if (!sameDoc) leftOrigin ??= "a navigation during capture";
     assertOnOrigin();
   } catch (e) {
     res.error = leftOrigin ? `page tried to leave the base origin or navigate during capture (${leftOrigin})`
       : plain(String(e?.message ?? e).split("\n")[0]);
-    if (!res.screenshot && !leftOrigin && sameOrigin(page.mainFrame().url())) {  // evidence of what the page showed
-      try { await page.screenshot({ path: `${base}.png` }); res.screenshot = `${base}.png`; } catch {}
+    if (!pending.png && !leftOrigin && sameOrigin(page.mainFrame().url())) {  // evidence of what the page showed
+      try { pending.png = await page.screenshot({ timeout: Math.min(t, 10000) }); } catch {}
     }
   } finally {
     // Decide what to keep only once the page can no longer move: a rejected evaluate can reach us before the
@@ -341,10 +352,13 @@ async function checkPage(browser, a, route, vp, theme, axePath) {
     const mainUrl = page.mainFrame().url();
     if (!leftOrigin && mainUrl !== "about:blank" && !mainUrl.startsWith("chrome-error:") && !sameOrigin(mainUrl))
       leftOrigin = redactUrl(mainUrl);
-    await ctx.close();
+    await within(ctx.close(), 10000, "closing the page").catch(() => {});  // a hung page must not block the verdict
     if (leftOrigin) {
-      discardCapture();
+      delete res.axe; delete res.overflow;  // nothing captured from a page that moved is kept
       res.error = `page tried to leave the base origin or navigate during capture (${leftOrigin})`;
+    } else {
+      if (pending.png) { fs.writeFileSync(`${base}.png`, pending.png); res.screenshot = `${base}.png`; }
+      if (pending.aria !== undefined) { fs.writeFileSync(`${base}.aria.yml`, pending.aria); res.aria = `${base}.aria.yml`; }
     }
     res.consoleErrors = consoleErrors; res.pageErrors = pageErrors; res.failedRequests = failedRequests;
     if (dropped.count) res.droppedEntries = dropped.count;
@@ -404,7 +418,7 @@ async function main() {
   try {
     for (const route of a.routes) for (const vp of a.viewports) for (const theme of a.themes)
       results.push(await checkPage(browser, a, route, vp, theme, axePath));
-  } finally { await browser.close(); }
+  } finally { await within(browser.close(), 15000, "closing the browser").catch(() => {}); }
 
   const reasons = [];
   const level = IMPACT[a.failOn] || 99;

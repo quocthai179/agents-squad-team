@@ -42,14 +42,15 @@ node <skill>/scripts/ui_check.mjs --base-url http://127.0.0.1:3100 --routes /,/s
   - Headers go to the base URL's origin only. The checker fetches those requests itself and follows same-origin redirects with the headers; they never reach another host and their values are never written to reports.
   - `--header` is meant for preview deployments. In that mode Chromium treats the pages as public and blocks their requests to other local ports, so on a local dev server log in with `--storage-state` instead.
   - Credentials in `--base-url` (`https://user:pass@…`) become HTTP credentials scoped to that origin and never appear in reports.
-  - `--routes` must be paths on that origin. A top-level navigation to another origin is blocked, or, if the browser followed a redirect on its own, the result is marked as an error and no screenshot, ARIA snapshot or axe result from it is kept. Once capture starts, the page may not navigate at all, and service workers are blocked.
+  - `--routes` must be paths on that origin. A top-level navigation to another origin is blocked, or, if the browser followed a redirect on its own, the result is marked as an error and no screenshot, ARIA snapshot or axe result from it is kept. Navigations during capture are blocked or detected, and service workers are blocked. The page can still rewrite its own DOM, so treat the evidence as what the page chose to show.
+  - If a result says **"page tried to leave the base origin or navigate during capture"**, that is suspicious behaviour, not just a missing check: report it as a finding and let the user decide before any push.
   - Only the top-level page is held to the origin. Cross-origin iframes inside it still load and appear in screenshots.
   - Use **test-account credentials only**. Keep storage-state files under `.squad/tmp/`. Never pass the user's own credentials or session to an MR or untrusted preview, because that build's author controls what the page does with them. Cookies in a storage state are scoped by host, not port, so they also reach other ports on the same host.
 - **Exit codes:**
   - 0 = pass,
   - 1 = a check failed: an axe violation at the `--fail-on` level, a page error or HTTP status ≥ 400, an accessibility scan that could not run, or console errors or overflow when those flags are set,
   - 2 = setup problem (no Playwright or Chromium, or the server never answered).
-- **Dependencies:** `playwright` (or `@playwright/test`) and `axe-core`, resolved from the project and then the global npm root. If they are missing, the checker says so. **Ask the user before installing anything** (`npm i -D playwright axe-core && npx playwright install chromium`).
+- **Dependencies:** `playwright` (or `@playwright/test`) 1.49 or newer, for ARIA snapshots and service-worker blocking, and `axe-core`, resolved from the project and then the global npm root. If they are missing, the checker says so. **Ask the user before installing anything** (`npm i -D playwright axe-core && npx playwright install chromium`).
 
 Outputs land in `--out`: one `<route>__<viewport>__<theme>.png` and `.aria.yml` per combination, plus `report.md` and `report.json`. The checker writes a `.gitignore` into `--out` because screenshots can contain personal data. URLs in reports have credentials and query values redacted.
 

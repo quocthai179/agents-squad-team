@@ -117,7 +117,7 @@ def code(value, limit=200):
 
 def visible(value):
     """One line without control, format (bidi, zero-width, tag) or line/paragraph separator characters."""
-    return "".join(" " if unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") or ord(c) in IGNORABLE_EXTRA
+    return "".join(" " if unicodedata.category(c) in ("Cc", "Cf", "Cn", "Zl", "Zp") or ord(c) in IGNORABLE_EXTRA
                    or 0xFE00 <= ord(c) <= 0xFE0F or 0xE0000 <= ord(c) <= 0xE0FFF else c for c in str(value)[:2000])
 
 
@@ -188,6 +188,8 @@ def pick(deps, table):
         if key in deps and label not in out:
             version = str(deps.get(key) or "")
             version = version if SAFE_VERSION.fullmatch(version) else ("?" if version else "")
+            if "://" in version:  # URLs may carry credentials: show the scheme only
+                version = version.split(":", 1)[0] + ":…"
             out.append(f"{label} ({version})" if version else label)
     return out
 

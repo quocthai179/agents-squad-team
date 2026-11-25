@@ -5,16 +5,16 @@
   },
   "metadata": {
     "description": "A squad of specialized Claude Code agents for software developers: orchestration, BA, task management, architecture, coding, testing, review, debugging, DevOps, security, performance, database migrations, incident response, dependency upgrades, docs and squad self-audits.",
-    "version": "1.6.0"
+    "version": "1.7.0"
   },
   "plugins": [
     {
       "name": "dev-squad",
       "source": "./plugins/dev-squad",
-      "description": "18 specialized developer agents (1 orchestrator + 17 specialists) plus slash commands that run full feature, bugfix, review, performance, DB change, incident, upgrade, sprint, release, UI and squad-audit workflows, plus load-simulation tools for reproducing sudden DB/HTTP/Kafka spikes.",
-      "version": "1.6.0",
+      "description": "18 specialized developer agents (1 orchestrator + 17 specialists) plus slash commands that run full feature, bugfix, review, performance, DB change, incident, surgical hotfix, upgrade, sprint, release, UI and squad-audit workflows, plus load-simulation tools for reproducing sudden DB/HTTP/Kafka spikes.",
+      "version": "1.7.0",
       "category": "development",
-      "keywords": ["agents", "subagents", "team", "orchestration", "testing", "code-review", "business-analysis", "project-management", "devops", "security", "performance", "kafka", "database", "load-testing", "spike-testing", "migrations", "sre", "incident-response", "upgrades", "ui", "frontend", "accessibility", "visual-testing"]
+      "keywords": ["agents", "subagents", "team", "orchestration", "testing", "code-review", "business-analysis", "project-management", "devops", "security", "performance", "kafka", "database", "load-testing", "spike-testing", "migrations", "sre", "incident-response", "upgrades", "hotfix", "ui", "frontend", "accessibility", "visual-testing"]
     }
   ]
 }

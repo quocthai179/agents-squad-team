@@ -1,6 +1,6 @@
 ---
 name: squad-playbook
-description: Playbook for working with the dev-squad agent team — which specialist agent to use for which job, standard pipelines (feature, bugfix, review, sprint, release), the shared `.squad/` workspace layout and the handoff format. Use when the user asks to "use the squad/team", wants several agents to collaborate, asks which agent fits a task, or mentions `.squad/` artifacts.
+description: Playbook for working with the dev-squad agent team — which specialist agent to use for which job, standard pipelines (feature, bugfix, hotfix, review, sprint, release), the shared `.squad/` workspace layout and the handoff format. Use when the user asks to "use the squad/team", wants several agents to collaborate, asks which agent fits a task, or mentions `.squad/` artifacts.
 ---
 
 # Dev-squad playbook
@@ -34,6 +34,7 @@ Subagents cannot launch other subagents. Orchestration (the pipelines below) the
 
 - **Feature** (`/dev-squad:feature`): BA → architect → PM → developer → QA ⟲ developer → code-reviewer ∥ security-auditor → tech-writer → PM close.
 - **Bugfix** (`/dev-squad:bugfix`): debugger → (developer) → QA → code-reviewer.
+- **Hotfix** (`/dev-squad:hotfix`): debugger (root cause + fix plan, no code) → user approves the plan → developer (surgical mode: only the approved edits, one reason per hunk) → `diff_guard` → QA (regression test) → review with the scope lens → review packet. Rules and formats: the `surgical-change` skill. Use it for release blockers and production patches; ordinary bugs use Bugfix.
 - **Review** (`/dev-squad:review`): code-reviewer ∥ security-auditor on local changes, a range, or an MR/PR (URL, `!iid`, `#n`). Writes the merged report to a fixed path (`.squad/reports/review-mr-<id>.md` for MRs) and ends with READY TO PUSH / NOT READY.
 - **Performance** (`/dev-squad:perf`): performance-engineer → (developer) → QA ∥ performance-engineer re-measure → code-reviewer.
 - **UI change** (`/dev-squad:ui`): `ui-context` (DESIGN.md) → (BA) → ui-engineer (build and verify in a browser) → design-reviewer ∥ code-reviewer → qa-engineer (visual and a11y tests).
@@ -63,6 +64,8 @@ Skip steps that add nothing (a one-line fix needs no BA or architect), and say w
 4. Show the gate decision: **READY TO PUSH** or **NOT READY**, with counts by severity and the lists of fixed and deferred items. Then ask the user to confirm.
 5. Push or open the MR only after that confirmation.
 
+For a surgical change (`/dev-squad:hotfix`), a hunk outside the approved fix plan or without a reason is also a `code-reviewer` 🔴 item, so it blocks like any other. An item in the hotfix's `deferred.md` is not a user deferral of a review finding. A hotfix is READY TO PUSH only with a `diff_guard.py --committed` PASS for the exact SHA being pushed, and it is pushed by that SHA (`git push --no-follow-tags origin <head_sha>:refs/heads/<branch>`) after the user has seen the hooks, push config and push URL that the push will use.
+
 If the code changes after the review, re-run it on the new diff. Reviewing only the delta is fine. If the delta touches code behind a deferred finding, ask the user to confirm that deferral again.
 
 ## Writing briefs
@@ -87,6 +90,7 @@ Agents start with no memory of the conversation. Every brief should contain:
 ├── perf/<scenario>/            # performance-engineer: runnable load-simulation tools
 ├── ui/DESIGN.md                # ui-context: the UI contract (commit it); ui/shots/ and ui/inventory.json are not committed
 ├── tmp/                        # developer: scratch scripts and build logs (self-ignored via tmp/.gitignore)
+├── hotfix/<slug>/              # surgical-change: fix-plan.md/.json, hunks.md, deferred.md, guard.md, REVIEW-PACKET.md
 ├── incidents/<date>-<slug>/    # sre-incident-responder: timeline.md, postmortem.md
 ├── audit/<date>/               # squad-auditor: squad-audit.md, drafts/, evidence/ (keep evidence out of git)
 └── reports/<date>-<type>-<slug>.md   # qa, review, security, debug, perf, upgrade

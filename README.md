@@ -2,7 +2,7 @@
 
 ![Agents Squad Team — 16 specialized agents and 14 workflow commands for Claude Code](assets/marketing/hero-banner.png)
 
-A **Claude Code** plugin that gives you a development squad of **18 specialized agents** (one coordinating lead and 17 specialists) and **17 workflow commands** covering the software development lifecycle: requirements → design → task planning → implementation → testing → review → security → performance → database migrations → release → incident response → dependency upgrades. It also includes an agent that audits the squad itself.
+A **Claude Code** plugin that gives you a development squad of **18 specialized agents** (one coordinating lead and 17 specialists) and **18 workflow commands** covering the software development lifecycle: requirements → design → task planning → implementation → testing → review → security → performance → database migrations → release → incident response → dependency upgrades. It also includes an agent that audits the squad itself.
 
 ## Meet the squad
 
@@ -49,6 +49,7 @@ Every agent:
 | `/dev-squad:squad <request>` | The orchestrator analyzes the request, plans the work, and delegates to the appropriate agents |
 | `/dev-squad:feature <description>` | BA → Architect → PM → Developer → QA (repeat until PASS) → Reviewer ∥ Security → Tech writer |
 | `/dev-squad:bugfix <bug>` | Debugger → (Developer) → QA regression tests → Reviewer |
+| `/dev-squad:hotfix <bug> [--base <branch>] [--level release\|prod]` | **Surgical fix** for a release blocker or production patch: Debugger proves the root cause and writes a **fix plan** (no code) → **you approve the plan** → Developer changes only the approved edits, one reason per hunk → `diff_guard` → QA regression test → Review (out-of-plan hunks block) → `REVIEW-PACKET.md` |
 | `/dev-squad:review [MR/PR URL \| !iid \| branch \| range]` | Code reviewer ∥ Security auditor run in parallel and produce a merged report; accepts MR/PR URLs or numbers; always saves the merged report to a fixed path (`.squad/reports/review-mr-<id>.md` for an MR/PR); concludes with READY TO PUSH / NOT READY |
 | `/dev-squad:commit-msg [context]` | Drafts a commit message from the staged diff using the repository's style; extracts the ticket ID from the branch name and **warns about mismatched ticket IDs**, including in unpushed commits; commits only after your confirmation |
 | `/dev-squad:brief [audience]` | Produces a fixed-format summary of no more than 250 words for a manager who understands programming but does not read the code: summary, problem, work completed, evidence-backed results, risks, decisions needed, and next steps |
@@ -139,6 +140,24 @@ In addition:
 python3 plugins/dev-squad/skills/ui-context/scripts/scan_ui.py --md .squad/ui/DESIGN.md
 node plugins/dev-squad/skills/visual-verify/scripts/ui_check.mjs --base-url http://127.0.0.1:3000 --routes /,/settings --themes light,dark
 ```
+
+## Hotfix mode: `/dev-squad:hotfix` and the `surgical-change` skill
+
+Late in a release or when patching production, AI agents tend to "improve" things nobody asked about: renames, reformatting, refactors, cleanups. The diff grows and the reviewer can no longer tell which lines fix the bug. Hotfix mode keeps the change inside a scope **you approve before any code is written**, and makes every changed line explain itself.
+
+- **The fix plan is the contract.** `debugger` reproduces the bug, proves the root cause, writes a failing regression test, and writes `.squad/hotfix/<slug>/fix-plan.md` + `fix-plan.json`: which files and symbols to change, why, the blast radius (every caller), local fix vs root fix, rollback. No production code until you approve it.
+- **Scope, not a line budget.** There is no fixed line limit: a limit measures the wrong thing and tempts the agent to cram logic or drop error handling. What is enforced is the scope: files outside the plan, new non-test files, deleted or renamed files, formatting-only hunks, and dependency/migration/CI/config changes are violations. Size is compared with the plan's estimate and reported as a warning only.
+- **One reason per hunk.** `developer` (in `Mode: surgical`) writes `hunks.md`: every hunk with its plan edit ID, why the fix needs it, and the risk. Anything else it notices goes to `deferred.md` instead of the diff.
+- **`diff_guard.py`** (stdlib only) checks the diff against the plan and `hunks.md`. When you approve the plan, the main session records the plan's sha256; a plan edited after approval fails the guard. Exit 1 means a violation: revert the hunk or approve a plan v2. Before a push it runs with `--committed` on the exact commit being pushed (clean tree, exactly one commit since the base, base-to-HEAD), because a working-tree check cannot see what was staged or committed earlier; it also lists the git hooks and push config that the push will use, for you to check, and the push itself is `git push --no-follow-tags origin <sha>:refs/heads/<branch>`. It also runs on a saved diff (`--diff-file`), so it can run in CI. It checks files and hunks, not symbols; the reviewer checks those.
+- **Starts clean, never wipes your work.** The hotfix runs on a branch or worktree created from the base; if you have uncommitted work there, the squad stops and asks. Agents revert only their own hunks, never with `reset --hard`, `clean` or `stash`.
+- **Two levels.** `release` lets you approve a dependency, migration, CI or config change in the plan (`allow`). `prod` forbids them and prefers the narrowest fix at the failing path, deferring a root fix in shared code.
+- **Review packet.** `REVIEW-PACKET.md` gives the reviewer the root cause, the hunk-by-hunk table, the blast radius, what was deliberately not changed, the guard and test results, and rollback/backport notes.
+
+```bash
+/dev-squad:hotfix  Checkout returns 500 when the cart has a 100% discount --base release/2.3 --level prod
+```
+
+The ideas come from studying [ponytail](https://github.com/DietrichGebert/ponytail) (reuse before writing, list every caller, report what was skipped, mark deliberate shortcuts) and the "surgical changes" rules in [andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills) (every changed line traces to the request, do not delete pre-existing dead code). Ponytail optimises for writing little code; hotfix mode optimises for changing little code. That is why it never asks for cleanups and defers root fixes in shared code during a production patch.
 
 ## `squad-auditor` agent — audit the squad itself
 
@@ -250,6 +269,7 @@ Agents exchange files so the next agent has the context it needs:
 ├── tmp/                             # developer: temporary scripts and logs (automatically gitignored)
 ├── LESSONS.md                       # shared lessons: every agent reads; write-enabled agents contribute
 ├── ui/DESIGN.md                     # UI contract (commit it); ui/shots/ and ui/inventory.json are not committed
+├── hotfix/<slug>/                   # /hotfix: fix-plan.md/.json, hunks.md, deferred.md, guard.md, REVIEW-PACKET.md
 ├── incidents/<date>-<slug>/         # sre-incident-responder: timeline, postmortem
 ├── audit/<date>/                    # squad-auditor: squad-audit.md, drafts/, evidence/
 └── reports/<date>-<type>-<slug>.md   # qa / review / security / debug / perf / upgrade
@@ -297,16 +317,17 @@ You can commit `.squad/` to share planning history with your team, or add it to 
 agents-squad-team/
 ├── .claude-plugin/marketplace.json     # marketplace definition
 ├── .github/workflows/validate.yml      # CI: plugin validation + unit tests
-├── tests/                             # unit tests: load simulation, transcript miner, scan_ui, ui_check, prompt lint
+├── tests/                             # unit tests: load simulation, transcript miner, scan_ui, ui_check, diff guard, prompt lint
 └── plugins/dev-squad/
     ├── .claude-plugin/plugin.json      # plugin manifest
     ├── agents/                         # 18 agents
-    ├── commands/                       # 17 workflow commands
-    ├── evals/                          # behaviour evals for `claude plugin eval` (UI routing, design review)
+    ├── commands/                       # 18 workflow commands
+    ├── evals/                          # behaviour evals for `claude plugin eval` (UI routing, design review, hotfix scope)
     └── skills/
         ├── squad-playbook/SKILL.md     # orchestration playbook
         ├── squad-audit/                # audit skill + scripts/mine_transcripts.py
         ├── ui-context/                 # DESIGN.md skill + scripts/scan_ui.py
+        ├── surgical-change/            # hotfix rules + scripts/diff_guard.py
         ├── visual-verify/              # browser verification skill + scripts/ui_check.mjs + references/ (CI, integrations)
         └── load-simulation/            # sudden load spike simulation
             ├── SKILL.md
@@ -325,7 +346,7 @@ python3 -m unittest discover -s tests
 
 `tests/test_ui_tools.py` drives a real Chromium when Playwright is installed (including the tests that a login header never reaches another origin); otherwise the browser part is skipped. CI does not install Chromium, so that part only runs on developer machines: run the suite on a machine with Playwright before pushing changes to `ui_check.mjs`.
 
-**Behaviour evals** (`plugins/dev-squad/evals/`, 5 cases) check that the squad routes UI work to `ui-engineer` + `design-reviewer`, that the gate blocks design findings, that it never claims "verified" without running a browser, and that it does **not** pull UI agents into backend/Kafka work. Each run costs model usage (about USD 0.6 for one run × 5 cases × 2 arms with/without the plugin), so they do not run in CI:
+**Behaviour evals** (`plugins/dev-squad/evals/`, 7 cases) check that the squad routes UI work to `ui-engineer` + `design-reviewer`, that the gate blocks design findings, that it never claims "verified" without running a browser, that it does **not** pull UI agents into backend/Kafka work, that a production patch goes through an approved fix plan without drive-by changes, and that a feature is not forced into hotfix mode. Each run costs model usage (about USD 0.6 for one run × 7 cases × 2 arms with/without the plugin), so they do not run in CI:
 
 ```bash
 cd plugins/dev-squad

@@ -716,7 +716,7 @@ class GitEndToEndTest(unittest.TestCase):
         subprocess.run(["git", "config", "--file", cfg, "url./evil/x=y/r.git.insteadOf", "https://example.com/"], check=True)
         self.git("config", "http.https://example.com/.extraheader", "AUTHORIZATION: basic eDphYmM=")
         self.git("config", "credential.helper", "!f() { echo password=hunter2; }; f")
-        self.git("config", "remote.origin.pushurl", "https://u:pa/ss@word@host/r.git")
+        self.git("config", "remote.origin.pushurl", "https://u:pa%2Fss%40word@host/r.git")
         args = [sys.executable, "-I", SCRIPT, "--plan", self.PLAN, "--hunks", ".squad/hotfix/neg-qty/hunks.md",
                 "--plan-sha256", self.sha(), "--committed", "--md", os.path.join(self.work, "guard.md")]
         res = subprocess.run(args, cwd=self.dir, capture_output=True, text=True, env=dict(os.environ, GIT_CONFIG_GLOBAL=cfg))
@@ -726,9 +726,31 @@ class GitEndToEndTest(unittest.TestCase):
         self.assertIn("touch /tmp/Q6", md)          # the hidden command is shown
         self.assertIn("\\x1c", md)                  # and the separator is visible
         self.assertIn("url./evil/x=y/r.git.insteadof", md)
-        for secret in ("eDphYmM", "hunter2", "pa/ss", "word@host"):
+        for secret in ("eDphYmM", "hunter2", "pa%2Fss", "word@host"):
             self.assertNotIn(secret, md)
         self.assertIn("https://***@host/r.git", md)
+        self.assertIn("credential.helper=!f() { echo password=***; }; f", md)  # the command stays readable
+
+    def test_a_token_word_cannot_hide_a_command_and_keys_are_masked(self):
+        self.write("src/price.py", self.FIXED)
+        self.commit_all("fix")
+        self.git("config", "remote.origin.receivepack", "touch /tmp/F2c; git-receive-pack # token=abc")
+        self.git("config", "url.https://x-access-token:ghs_FAKE123@github.com/.insteadOf", "https://github.com/")
+        self.git("config", "core.askpass", "/bin/echo ghu_FAKE456")
+        self.git("config", "remote.origin.uploadpack", "echo \"`touch /tmp/F1b`\"; git-upload-pack")
+        self.git("config", "credential.https://h.example.helper", '!f() { echo password="FAKE-S3cret"; }; f')
+        res = self.guard("--committed", "--md", os.path.join(self.work, "guard.md"))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        with open(os.path.join(self.work, "guard.md"), encoding="utf-8") as fh:
+            md = fh.read()
+        self.assertIn("touch /tmp/F2c; git-receive-pack # token=***", md)
+        for secret in ("ghs_FAKE123", "ghu_FAKE456", "token=abc"):
+            self.assertNotIn(secret, md)
+        self.assertIn("<key withheld: may hold a secret>", md)  # a key is never shown partly masked
+        self.assertIn("withheld-config", md)
+        self.assertIn("\\x60touch /tmp/F1b\\x60", md)  # backticks are shown, not turned into quotes
+        self.assertNotIn("FAKE-S3cret", md)
+        self.assertIn("withheld-config", md)
 
     def test_only_origin_base_counts_as_published(self):
         self.write(self.PLAN, json.dumps(plan_dict(base="release", base_sha=self.base_sha)))
@@ -736,6 +758,31 @@ class GitEndToEndTest(unittest.TestCase):
         self.write("src/price.py", self.FIXED)
         self.commit_all("fix")
         self.assertIn("base-not-published", self.guard("--committed").stdout)
+
+    def test_masking_never_swallows_shell_syntax(self):
+        cases = {
+            ("remote.origin.receivepack", ": token=$(touch${IFS}/tmp/Nh); git-receive-pack"): dg.WITHHELD,  # flagged, not masked
+            ("credential.helper", "!f() { : http://x;touch${IFS}/tmp/Nh2;:@h; }; f"): "touch${IFS}/tmp/Nh2",
+            ("core.sshcommand", "ssh -o ProxyCommand=curl${IFS}http://x;touch${IFS}/tmp/Nh3;:${IFS}a@p.example"): "touch${IFS}/tmp/Nh3",
+            ("core.askpass", "/bin/run token /tmp/evil.sh"): "/tmp/evil.sh",
+            ("remote.origin.pushurl", "https://evil.example/r@github.com/org/repo.git"): "evil.example",
+        }
+        for (key, value), visible in cases.items():
+            with self.subTest(key=key):
+                self.assertIn(visible, dg.redact(key, value))
+        self.assertEqual(dg.redact("remote.origin.url", "https://u:p%40ss@h/x"), "https://***@h/x")
+        self.assertEqual(dg.redact("http.proxy", "corpuser:FAKE-Pr0xyPass@proxy.example:3128"), "***@proxy.example:3128")
+        self.assertEqual(dg.redact("remote.origin.proxy", "http://u:p@ss@px:8080"), "http://***@px:8080")
+        self.assertEqual(dg.redact("remote.origin.receivepack", ".squad/tmp/token=/rp"), dg.WITHHELD)  # never partly masked
+        self.assertEqual(dg.redact("core.askpass", "/tmp/xoxb-run"), "/tmp/xoxb-run")
+        self.assertEqual(dg.redact("core.askpass", "/bin/echo xoxb-123-abc"), "/bin/echo xoxb-***")
+        for value in ('!f() { echo password="FAKE-S3cret"; }; f', "!f() { echo \"password=P@ss!\"; }; f",
+                      "store password=s3cr3t#2024", "https://u:p$ss@host/r.git", "https://u:pa@ss@host",
+                      "x authorization: Bearer abc"):
+            with self.subTest(value=value):
+                shown = dg.redact("credential.helper", value)
+                self.assertEqual(shown, dg.WITHHELD)
+        self.assertEqual(dg.redact("credential.helper", "store password=s3cr3t"), "store password=***")
 
     def test_tag_on_the_hotfix_commit_fails(self):
         self.write("src/price.py", self.FIXED)

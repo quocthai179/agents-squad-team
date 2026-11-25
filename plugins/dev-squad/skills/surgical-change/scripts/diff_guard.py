@@ -497,7 +497,10 @@ def collect_diff(base_sha, committed=False, base_name=None):
             scope, origin, entry = raw_cfg[i], raw_cfg[i + 1], raw_cfg[i + 2]
             key, _, value = entry.partition("\n")
             if scope in ("local", "worktree") or PUSH_KEY_RE.fullmatch(key):
-                push_config.append(f"{scope} {origin} {key}={redact(key, value)}")
+                shown_key = key
+                if mask(key) != key or LEFTOVER_RE.search(key):  # never show a partly masked key
+                    shown_key = "<key withheld: may hold a secret>"
+                push_config.append(f"{show(scope)} {show(mask(origin))} {show(shown_key)}={redact(key, value)}")
         tags = git("for-each-ref", "--format=%(refname)", f"--points-at={head}", "refs/tags/", cwd=root).split()
         for t in tags:
             hard.append(("tag-on-hotfix", t, "a tag points at the hotfix commit: a push with followTags would send it;"
@@ -540,20 +543,62 @@ def collect_diff(base_sha, committed=False, base_name=None):
 PUSH_KEY_RE = re.compile(r"core\.(hookspath|sshcommand|askpass|gitproxy)|remote\..+\.(url|pushurl|receivepack|uploadpack"
                          r"|vcs|proxy|push)|url\..+\.(pushinsteadof|insteadof)|credential\..+|protocol\..+"
                          r"|http\..+|push\..+", re.I | re.S)
-SECRET_KEY_RE = re.compile(r"extraheader$|\.(password|token|secret|cookiefile)$|^credential\..*helper$", re.I | re.S)
-SECRET_VALUE_RE = re.compile(r"authorization:|bearer\s|basic\s|password=|token=|ghp_|gho_|github_pat_|glpat-|xox[abpr]-|AKIA", re.I)
+# Keys whose whole value is a secret and never a command. Command-bearing keys (sshCommand, receivepack,
+# credential helpers, ...) are never masked whole: only the token substrings in them are, so a command stays visible.
+SECRET_KEY_RE = re.compile(r"extraheader$|\.(password|token|secret|cookiefile)$", re.I | re.S)
+# Each pattern masks only a run of credential characters, never shell syntax ($ ( ) { } ; | & ` < > quotes or
+# spaces), so masking cannot hide a command. URL userinfo stops at the first '/' (a valid URL percent-encodes it).
+CRED = r"[A-Za-z0-9._~%+=-]"
+EDGE = r"(?<![\w./-])"  # a token or keyword starts a word, never in the middle of a path
+TOKEN_RES = [
+    (re.compile(EDGE + r"(gh[pousr]_|github_pat_|glpat-|xox[abpr]-)[A-Za-z0-9_-]+"), r"\1***"),
+    (re.compile(EDGE + r"AKIA[0-9A-Z]{12,}"), "AKIA***"),
+    (re.compile(EDGE + r"((?:password|passwd|token|secret|api[_-]?key)=)" + CRED + r"{1,256}(?=$|[\s;&'\"])", re.I), r"\1***"),
+    (re.compile(r"(authorization:\s*(?:basic|bearer|token)\s+)[A-Za-z0-9._~%+=/-]{8,}", re.I), r"\1***"),
+    (re.compile(r"(://)[A-Za-z0-9._~%!*+,=:-]+@"), r"\1***@"),
+]
+
+
+def show(text):
+    """Escape what could change how a line reads: control and separator characters, backticks, backslashes."""
+    out = []
+    for c in text:
+        if c in "`\\":
+            out.append(f"\\x{ord(c):02x}")
+        elif c.isprintable() or c == " ":
+            out.append(c)
+        else:
+            out.append(f"\\x{ord(c):02x}" if ord(c) < 256 else f"\\u{ord(c):04x}")
+    return "".join(out)
+
+
+def mask(text):
+    for pattern, repl in TOKEN_RES:
+        text = pattern.sub(repl, text)
+    return text
+
+
+# After masking, anything still shaped like a secret means masking could not isolate it (quotes, unusual
+# characters): the value is then withheld, never printed, and the report tells the user to inspect it themselves.
+LEFTOVER_RE = re.compile(r"(password|passwd|token|secret|api[_-]?key)\s*[=:]\s*(?!\*\*\*)[^\s;&|]"
+                         r"|authorization:\s*(basic|bearer|token)\s+(?!\*\*\*)\S"
+                         r"|://(?!\*\*\*@)[^/\s]*@|://[^/\s]*@[^/\s]*@"
+                         r"|^[^\s/@]*:[^\s/@]*@", re.I)  # user:pass@host without a scheme (proxy syntax)
+PROXY_KEY_RE = re.compile(r"(^|\.)proxy$", re.I)
+WITHHELD = "<withheld: may hold a secret that could not be masked; inspect it with git config --show-origin --get-all>"
 
 
 def redact(key, value):
-    """Hide credentials before a config value goes into a report; escape control and separator characters.
-
-    URL userinfo is masked up to the last '@' in the value (greedy, so a password holding '/' or '@' is masked too).
-    """
-    if SECRET_KEY_RE.search(key) or SECRET_VALUE_RE.search(value):
+    """Hide credentials before a config entry goes into a report, keep any command readable, escape the rest."""
+    if SECRET_KEY_RE.search(key):
         return f"<redacted, {len(value)} chars>"
-    value = re.sub(r"(://)[^\s]*@", r"\1***@", value)
-    return "".join(c if c.isprintable() or c == " " else f"\\x{ord(c):02x}" if ord(c) < 256 else f"\\u{ord(c):04x}"
-                   for c in value)
+    if PROXY_KEY_RE.search(key) and "@" in value:  # [scheme://][user[:password]@]host[:port]: no command inside
+        scheme, _, rest = value.rpartition("://") if "://" in value else ("", "", value)
+        value = (scheme + "://" if scheme else "") + "***@" + rest.rpartition("@")[2]
+    masked = mask(value)
+    if LEFTOVER_RE.search(masked):
+        return WITHHELD
+    return show(masked)
 
 
 def tree_of(root, commit):
@@ -701,6 +746,11 @@ def check(plan, files, rows, approved_sha=None, meta=None, unpinned=False):
     if hooks and (hooks["hooks_path"] or hooks["active"]):
         add(warn, "active-hooks", None, f"git hooks will run on commit and push (hooksPath: {hooks['hooks_path'] or 'default'};"
                                         f" active: {', '.join(hooks['active']) or 'none'}): show them to the user before the push")
+    withheld = [line for line in (meta or {}).get("push_config", []) if "withheld" in line]
+    if withheld:
+        add(warn, "withheld-config", None, f"{len(withheld)} push config entries are withheld because a secret in them could"
+                                           " not be masked: the user must inspect them with `git config --show-origin --list`"
+                                           " before the push")
     if (meta or {}).get("push_config"):
         add(warn, "push-config", None, f"{len(meta['push_config'])} git config entries decide where and how the push runs;"
                                        " they are listed in full in the report: show them to the user before the push")

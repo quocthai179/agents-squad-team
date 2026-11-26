@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 .squad/audit/*/evidence/
 .squad/tmp/
+.squad/ui/shots/
+.squad/ui/inventory.json
+.squad/ui/DESIGN.draft.md
+plugins/dev-squad/evals/results/

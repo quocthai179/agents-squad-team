@@ -1,12 +1,12 @@
 {
   "name": "dev-squad",
-  "version": "1.5.0",
-  "description": "A developer squad of 16 specialized agents (orchestrator, business analyst, project manager, architect, developer, QA, code reviewer, debugger, DevOps, security auditor, performance engineer, database engineer, SRE/incident responder, dependency upgrader, tech writer, squad auditor) with workflow commands.",
+  "version": "1.6.0",
+  "description": "A developer squad of 18 specialized agents (orchestrator, business analyst, project manager, architect, developer, QA, code reviewer, debugger, DevOps, security auditor, performance engineer, database engineer, SRE/incident responder, dependency upgrader, tech writer, squad auditor, UI engineer, design reviewer) with workflow commands.",
   "author": {
     "name": "quocthai179"
   },
   "homepage": "https://github.com/quocthai179/agents-squad-team",
   "repository": "https://github.com/quocthai179/agents-squad-team",
   "license": "MIT",
-  "keywords": ["agents", "team", "orchestration", "developer", "qa", "code-review", "ba", "pm", "devops", "security", "performance", "load-testing", "database", "migrations", "sre", "incident", "upgrades", "audit"]
+  "keywords": ["agents", "team", "orchestration", "developer", "qa", "code-review", "ba", "pm", "devops", "security", "performance", "load-testing", "database", "migrations", "sre", "incident", "upgrades", "audit", "ui", "frontend", "accessibility", "design-review"]
 }
